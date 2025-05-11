@@ -1,0 +1,23 @@
+# Node modules
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+
+# Environment files
+.env
+
+# Coverage reports
+coverage/
+
+# Docker overrides
+docker-compose.override.yml
+
+# Editor directories
+.vscode/
+.idea/
