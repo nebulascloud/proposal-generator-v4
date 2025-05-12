@@ -12,6 +12,9 @@ yarn-error.log*
 # Environment files
 .env
 
+# Environment variables
+.env
+
 # Coverage reports
 coverage/
 
