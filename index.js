@@ -8,6 +8,7 @@ const { generateProposal } = require('./agents/proposalAgent');
 const { collaborateProposal } = require('./agents/collaborativeAgent');
 const { createAssistant, getAssistantResponse } = require('./agents/assistantAgent');
 const { assignSections, determineDependencies } = require('./agents/orchestratorAgent');
+const { runFullFlow } = require('./agents/flowAgent');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const { defaultTemplate, renderDefault } = require('./templates/defaultTemplate');
@@ -170,13 +171,27 @@ const swaggerOptions = {
             '404': { description: 'Not found' }
           }
         }
+      },
+      '/agents/flow': {
+        post: {
+          summary: 'Run end-to-end proposal generation flow',
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { type: 'object', properties: { brief: { type: 'object' } }, required: ['brief'] } } }
+          },
+          responses: {
+            '200': { description: 'Flow result', content: { 'application/json': { schema: { type: 'object' } } } },
+            '400': { description: 'Validation error' },
+            '500': { description: 'Server error' }
+          }
+        }
       }
     }
   },
   apis: []
 };
-const swaggerSpec = swaggerJsDoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+const swaggerDocs = swaggerJsDoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 app.use(express.json());
 
@@ -441,6 +456,19 @@ app.get('/agents/orchestrate/:id/status', (req, res) => {
   }
   if (!orch) return res.status(404).json({ error: 'Orchestration not found' });
   res.json({ id: orch.id, status: orch.status, progress: orch.progress });
+});
+
+// Full QA & review flow endpoint
+app.post('/agents/flow', async (req, res) => {
+  const schema = Joi.object({ brief: Joi.object().required() });
+  const { error, value } = schema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+  try {
+    const result = await runFullFlow({ brief: value.brief });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 if (require.main === module) {

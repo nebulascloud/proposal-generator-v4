@@ -2,10 +2,11 @@ require('dotenv').config();
 
 /**
  * Generates a proposal draft using LangChain and OpenAI.
- * Falls back to a test stub when NODE_ENV is 'test'.
+ * Falls back to a test stub when NODE_ENV is 'test' or when OPENAI_API_KEY is not set.
  */
 async function generateProposal({ title, client, details, section }) {
-  if (process.env.NODE_ENV === 'test') {
+  // Stub in test or without API key
+  if (process.env.NODE_ENV === 'test' || !process.env.OPENAI_API_KEY) {
     return `Test proposal draft for title: ${title}, client: ${client}, details: ${details}${section ? `, section: ${section}` : ''}`;
   }
 

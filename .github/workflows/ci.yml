@@ -8,6 +8,8 @@ on:
 
 jobs:
   build-and-test:
+    env:
+      NODE_ENV: test
     runs-on: ubuntu-latest
 
     steps:
@@ -28,3 +30,16 @@ jobs:
       - name: Build Docker image
         run: |
           docker build . --file Dockerfile --tag proposal-generator-v4-app
+
+      - name: Start Docker Compose services
+        run: docker-compose up -d --build
+
+      - name: Wait for service readiness
+        run: sleep 10
+
+      - name: Run integration tests
+        run: bash scripts/integration.sh
+
+      - name: Teardown Docker Compose services
+        if: always()
+        run: docker-compose down
