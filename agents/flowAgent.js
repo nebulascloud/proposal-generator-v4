@@ -2,7 +2,7 @@ require('dotenv').config();
 const { defaultTemplate } = require('../templates/defaultTemplate');
 const { OpenAI } = require('openai');
 const { assignSections } = require('./orchestratorAgent');
-const { createAssistant, getAssistantResponse } = require('./assistantAgent');
+const { createAssistant, getAssistantResponse, initializeThread } = require('./assistantAgent');
 const { assistantDefinitions } = require('./assistantDefinitions');
 
 // Mock customer agent
@@ -32,10 +32,10 @@ async function runFullFlow({ brief }) {
   // Production: orchestrate via assistants
   const sections = Object.keys(defaultTemplate);
 
-  // Create a single thread for the entire flow
+  // Create and initialize a single thread for the entire flow with comprehensive context
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const mainThread = await openai.beta.threads.create();
-  console.log("[flowAgent] Created main flow thread " + mainThread.id);
+  const mainThread = await initializeThread(brief);
+  console.log("[flowAgent] Created and initialized main flow thread " + mainThread.id);
   
   // Get available roles for the orchestrator
   const availableRoles = Object.keys(assistantDefinitions);
@@ -44,9 +44,9 @@ async function runFullFlow({ brief }) {
   // Create orchestration assistant
   const orchestratorId = await createAssistant('Collaboration Orchestrator');
   
-  // Step 1: analysis
-  const analysisPrompt = "Analyze this brief: " + JSON.stringify(brief);
-  const analysis = await getAssistantResponse(orchestratorId, analysisPrompt, mainThread.id);
+  // Step 1: analysis - no need to include the brief again since it's in the thread context
+  const analysisPrompt = "Analyze the previously provided brief and provide a comprehensive assessment.";
+  const analysis = await getAssistantResponse(orchestratorId, analysisPrompt, mainThread.id, { skipContextReminder: true });
   
   // JSON parse helper
   function parseJson(raw, label) {
@@ -77,17 +77,17 @@ async function runFullFlow({ brief }) {
   
   // Step 2: assign sections - specify ONLY available roles
   const assignPrompt = "Assign these sections: " + sections.join(', ') + 
-                        " for brief: " + brief.client_name + ".\n\n" +
+                        " based on the brief information already provided.\n\n" +
                         "IMPORTANT: You must ONLY use these exact roles in your assignments: " + 
                         availableRoles.join(', ') + 
                         "\n\nReturn a JSON object mapping each section name to exactly one of these role names.";
   
-  const assignRaw = await getAssistantResponse(orchestratorId, assignPrompt, mainThread.id);
+  const assignRaw = await getAssistantResponse(orchestratorId, assignPrompt, mainThread.id, { skipContextReminder: true });
   const assignments = parseJson(assignRaw, 'section assignments');
   
   // Step 3: generate qualifying questions
-  const questionsPrompt = "For each section generate qualifying questions. Return JSON map section to array of questions.";
-  const questionsRaw = await getAssistantResponse(orchestratorId, questionsPrompt, mainThread.id);
+  const questionsPrompt = "For each section in our proposal, generate relevant qualifying questions based on the project context. Return a JSON object mapping each section name to an array of questions.";
+  const questionsRaw = await getAssistantResponse(orchestratorId, questionsPrompt, mainThread.id, { skipContextReminder: true });
   const questions = parseJson(questionsRaw, 'qualifying questions');
   
   // Step 4: get customer answers
@@ -96,7 +96,8 @@ async function runFullFlow({ brief }) {
   for (const [section, qs] of Object.entries(questions)) {
     answers[section] = [];
     for (const q of qs) {
-      const ans = await getAssistantResponse(customerId, q, mainThread.id);
+      // Customer needs specific questions without context reminders
+      const ans = await getAssistantResponse(customerId, q, mainThread.id, { skipContextReminder: true });
       answers[section].push(ans);
     }
   }
@@ -106,21 +107,23 @@ async function runFullFlow({ brief }) {
   for (const [section, role] of Object.entries(assignments)) {
     // Map role to available assistant if needed
     const aid = await createAssistant(role);
-    const prompt = "Draft section " + section + " based on brief and answers: " + JSON.stringify(answers[section]);
-    development[section] = await getAssistantResponse(aid, prompt, mainThread.id);
+    // Use focused prompt that relies on thread context and adds only relevant section answers
+    const prompt = "Draft the \"" + section + "\" section based on the project context and these qualifying question answers: " + JSON.stringify(answers[section]);
+    development[section] = await getAssistantResponse(aid, prompt, mainThread.id, { skipContextReminder: true });
   }
   
   // Step 6: reviews by orchestrator
   const reviews = {};
   for (const section of sections) {
-    const reviewPrompt = "Review the draft for " + section + ": " + development[section];
-    reviews[section] = await getAssistantResponse(orchestratorId, reviewPrompt, mainThread.id);
+    // Use context-aware prompts for reviews
+    const reviewPrompt = "Review the following draft for the \"" + section + "\" section. Ensure it aligns with the project goals and addresses the client's needs:\n\n" + development[section];
+    reviews[section] = await getAssistantResponse(orchestratorId, reviewPrompt, mainThread.id, { skipContextReminder: true });
   }
   
   // Step 7: final assembly
   const assembled = sections.map(sec => development[sec]).join('\n\n');
-  const finalPrompt = "Finalize the proposal with assembled sections: " + assembled;
-  const final = await getAssistantResponse(orchestratorId, finalPrompt, mainThread.id);
+  const finalPrompt = "Finalize the complete proposal by assembling and harmonizing the following sections into a cohesive document:\n\n" + assembled;
+  const final = await getAssistantResponse(orchestratorId, finalPrompt, mainThread.id, { skipContextReminder: true });
   
   console.log("[flowAgent] Completed flow using thread " + mainThread.id);
   return { analysis, assignments, questions, answers, development, reviews, final, assembled };

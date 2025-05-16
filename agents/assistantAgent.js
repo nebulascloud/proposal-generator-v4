@@ -6,11 +6,15 @@ if (useStub) {
   async function createAssistant(role) {
     return 'test-assistant';
   }
-  async function getAssistantResponse(assistantId, userMessage) {
+  async function getAssistantResponse(assistantId, userMessage, specificThreadId = null, options = {}) {
+    // In stub implementation, we ignore specificThreadId and options parameters
     return `Test assistant response for ${assistantId}`;
   }
+  async function initializeThread(brief) {
+    return { id: 'test-thread-id' };
+  }
   const assistantIds = {};
-  module.exports = { createAssistant, getAssistantResponse, assistantDefinitions, assistantIds };
+  module.exports = { createAssistant, getAssistantResponse, initializeThread, assistantDefinitions, assistantIds };
 } else {
   const fs = require('fs');
   const path = require('path');
@@ -119,8 +123,10 @@ if (useStub) {
     return assistant.id;
   }
 
-  async function getAssistantResponse(assistantId, userMessage, specificThreadId = null) {
+  async function getAssistantResponse(assistantId, userMessage, specificThreadId = null, options = {}) {
+    const { skipContextReminder = false } = options;
     console.log(`[AssistantAgent] (${assistantId}) getAssistantResponse called with message: ${userMessage}`);
+    
     // Use provided threadId or create/retrieve from cached threadIds
     let threadId = specificThreadId;
     if (!threadId) {
@@ -133,9 +139,17 @@ if (useStub) {
     } else {
       console.log(`[assistantAgent] Using provided thread ${threadId} for assistant ${assistantId}`);
     }
+    
+    // Determine if we need to add a context reminder
+    let finalMessage = userMessage;
+    if (specificThreadId && !skipContextReminder) {
+      // When using a shared thread but not explicitly skipping context, add a subtle reminder
+      finalMessage = `(Remember to consider all previously shared context) ${userMessage}`;
+    }
+    
     // Post user message to thread
-    console.log(`[assistantAgent] Posting message to thread ${threadId}: ${userMessage}`);
-    await openai.beta.threads.messages.create(threadId, { role: 'user', content: userMessage });
+    console.log(`[assistantAgent] Posting ${skipContextReminder ? 'focused' : 'standard'} message to thread ${threadId}: ${finalMessage}`);
+    await openai.beta.threads.messages.create(threadId, { role: 'user', content: finalMessage });
     // Run assistant on thread
     const run = await openai.beta.threads.runs.create(threadId, { assistant_id: assistantId });
     console.log(`[assistantAgent] Created run ${run.id} for thread ${threadId}`);
@@ -194,5 +208,42 @@ if (useStub) {
     }
   }
 
-  module.exports = { createAssistant, getAssistantResponse, assistantDefinitions, assistantIds };
+  /**
+   * Initialize a thread with comprehensive context for all subsequent messages
+   * @param {Object} brief - The customer brief with all context information
+   * @returns {Object} The created thread object
+   */
+  async function initializeThread(brief) {
+    console.log(`[assistantAgent] Initializing thread with comprehensive context`);
+    
+    // Create a new thread
+    const thread = await openai.beta.threads.create();
+    console.log(`[assistantAgent] Created new thread ${thread.id} for context initialization`);
+    
+    // Prepare a comprehensive context message
+    const contextMessage = `
+PROJECT CONTEXT INFORMATION
+--------------------------
+${brief.title ? `Title: ${brief.title}` : ''}
+Client: ${brief.client_name || brief.client}
+Project Description: ${brief.project_description || brief.details}
+${brief.pain_points ? `\nPain Points:\n${Array.isArray(brief.pain_points) ? brief.pain_points.map(p => `- ${p}`).join('\n') : brief.pain_points}` : ''}
+${brief.specific_requirements ? `\nSpecific Requirements:\n${Array.isArray(brief.specific_requirements) ? brief.specific_requirements.map(r => `- ${r}`).join('\n') : brief.specific_requirements}` : ''}
+${brief.client_background ? `\nClient Background:\n${brief.client_background}` : ''}
+${brief.additional_information ? `\nAdditional Information:\n${JSON.stringify(brief.additional_information, null, 2)}` : ''}
+
+IMPORTANT: All subsequent messages in this thread should consider this context information. There is no need to repeat this context in future prompts.
+`;
+
+    // Post the context message to the thread
+    await openai.beta.threads.messages.create(thread.id, {
+      role: 'user',
+      content: contextMessage
+    });
+    
+    console.log(`[assistantAgent] Thread ${thread.id} initialized with comprehensive context`);
+    return thread;
+  }
+
+  module.exports = { createAssistant, getAssistantResponse, initializeThread, assistantDefinitions, assistantIds };
 }

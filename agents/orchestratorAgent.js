@@ -1,13 +1,14 @@
 require('dotenv').config();
-const { createAssistant, getAssistantResponse } = require('./assistantAgent');
+const { createAssistant, getAssistantResponse, initializeThread } = require('./assistantAgent');
 
 const model = process.env.OPENAI_MODEL || 'gpt-4';
 const temperature = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7;
 
 /**
  * Assigns proposal sections to agent roles via LLM.
+ * Uses the context-aware approach when a thread is provided.
  */
-async function assignSections({ sections, title, client, details }) {
+async function assignSections({ sections, title, client, details, threadId = null }) {
   if (process.env.NODE_ENV === 'test' || !process.env.OPENAI_API_KEY) {
     const mapping = {};
     sections.forEach(sec => { mapping[sec] = 'Account Manager'; });
@@ -16,8 +17,21 @@ async function assignSections({ sections, title, client, details }) {
 
   // Production: delegate to Collaboration Orchestrator assistant
   const orchestratorId = await createAssistant('Collaboration Orchestrator');
-  const prompt = `Assign these sections to roles: ${sections.join(', ')} for title=${title}, client=${client}, details=${details}. Return JSON mapping section to role.`;
-  const raw = await getAssistantResponse(orchestratorId, prompt);
+  
+  let thread = threadId;
+  let prompt;
+  
+  // Create a thread with context if none provided
+  if (!threadId) {
+    const brief = { title, client_name: client, project_description: details };
+    thread = await initializeThread(brief);
+    prompt = `Assign these sections to appropriate roles: ${sections.join(', ')}. Return a JSON object mapping each section name to a role.`;
+  } else {
+    // Use context-aware prompt with existing thread
+    prompt = `Assign these sections to appropriate roles: ${sections.join(', ')}. Return a JSON object mapping each section name to a role.`;
+  }
+  
+  const raw = await getAssistantResponse(orchestratorId, prompt, thread ? thread.id : null, { skipContextReminder: !!threadId });
   console.log(`[orchestratorAgent] Raw section assignments response: ${raw}`);
   if (typeof raw !== 'string' || !raw.trim()) {
     throw new Error('Empty assistant response for section assignments');

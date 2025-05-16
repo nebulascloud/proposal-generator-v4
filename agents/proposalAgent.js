@@ -1,32 +1,55 @@
 require('dotenv').config();
+const { createAssistant, getAssistantResponse, initializeThread } = require('./assistantAgent');
 
 /**
- * Generates a proposal draft using LangChain and OpenAI.
+ * Generates a proposal draft using the Assistants API with context sharing.
  * Falls back to a test stub when NODE_ENV is 'test' or when OPENAI_API_KEY is not set.
  */
-async function generateProposal({ title, client, details, section }) {
+async function generateProposal({ title, client, details, section, threadId = null }) {
   // Stub in test or without API key
   if (process.env.NODE_ENV === 'test' || !process.env.OPENAI_API_KEY) {
     return `Test proposal draft for title: ${title}, client: ${client}, details: ${details}${section ? `, section: ${section}` : ''}`;
   }
-
-  // Dynamically import ESM-based langchain modules
-  const [{ OpenAI }, { PromptTemplate }, { LLMChain }] = await Promise.all([
-    import('langchain/llms/openai'),
-    import('langchain/prompts'),
-    import('langchain/chains'),
-  ]);
-  const llm = new OpenAI({
-    openAIApiKey: process.env.OPENAI_API_KEY,
-    temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7,
-  });
-  // Include section context if provided
-  const sectionIntro = section ? `Focus on the "${section}" section specifically.\n` : '';
-  const template = `You are a professional proposal writer.\n${sectionIntro}Given the following information, draft a formal and persuasive proposal.\n\nTitle: {title}\\nClient: {client}\\nDetails: {details}\\n\nCompose a well-structured, concise proposal.`;
-  const prompt = new PromptTemplate({ template, inputVariables: ['title', 'client', 'details'] });
-  const chain = new LLMChain({ llm, prompt });
-  const response = await chain.call({ title, client, details });
-  return response.text || response.output;
+  
+  const proposalWriterId = await createAssistant('RPE Account Manager (AM)');
+  
+  // Determine if we need to create a new thread with context
+  let thread = threadId;
+  let prompt;
+  
+  if (!threadId) {
+    // No existing thread, so initialize one with comprehensive context
+    const brief = { 
+      title, 
+      client_name: client, 
+      project_description: details
+    };
+    thread = await initializeThread(brief);
+    
+    if (section) {
+      // Focus on specific section
+      prompt = `Draft the "${section}" section of the proposal. It should be formal, persuasive, and well-structured.`;
+    } else {
+      // Draft the full proposal
+      prompt = `Draft a complete, formal and persuasive proposal. The proposal should be well-structured and concise.`;
+    }
+  } else {
+    // Using existing thread with context
+    if (section) {
+      prompt = `Draft the "${section}" section of the proposal. It should be formal, persuasive, and well-structured.`;
+    } else {
+      prompt = `Draft a complete, formal and persuasive proposal based on the provided context. The proposal should be well-structured and concise.`;
+    }
+  }
+  
+  const response = await getAssistantResponse(
+    proposalWriterId, 
+    prompt, 
+    thread ? thread.id : null,
+    { skipContextReminder: !!threadId }
+  );
+  
+  return response;
 }
 
 // Export for CommonJS
