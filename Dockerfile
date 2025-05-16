@@ -1,6 +1,9 @@
 # Use official Node.js LTS image
 FROM node:18-alpine
 
+# Set production environment for npm install
+ENV NODE_ENV=production
+
 # Install Chromium and necessary libraries for Puppeteer/html-pdf-node
 RUN apk add --no-cache \
     chromium \
@@ -8,7 +11,9 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    curl \
+    && rm -rf /var/cache/apk/*
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Set working directory
@@ -18,7 +23,9 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install production dependencies
-RUN npm install --production
+RUN npm install --production \
+    && npm prune --production \
+    && npm cache clean --force
 
 # Copy application code
 COPY . .

@@ -2,8 +2,7 @@ require('dotenv').config();
 const { defaultTemplate } = require('../templates/defaultTemplate');
 const { OpenAI } = require('openai');
 const { assignSections } = require('./orchestratorAgent');
-const { createAssistant, getAssistantResponse } = require('./assistantAgent');
-const { assistantDefinitions } = require('./assistantDefinitions');
+const { createAssistant, getAssistantResponse, assistantDefinitions } = require('./assistantAgent');
 
 // Mock customer agent
 function mockCustomerAnswer(question, brief) {
@@ -24,7 +23,7 @@ async function runFullFlow({ brief }) {
     const reviews = {};
     sections.forEach(sec => {
       reviews[sec] = `Review comment for ${sec}`;
-    });
+    }
     const approval = 'Final approval granted';
     const assembled = sections.map(sec => development[sec]).join('\n\n');
     return { analysis, sections, assignments, questions, answers, development, reviews, approval, assembled };

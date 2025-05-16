@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { OpenAI } = require('openai');
+const { createAssistant, getAssistantResponse } = require('./assistantAgent');
 
 const model = process.env.OPENAI_MODEL || 'gpt-4';
 const temperature = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7;
@@ -14,18 +14,26 @@ async function assignSections({ sections, title, client, details }) {
     return mapping;
   }
 
-  // Production: use OpenAI SDK
-  const ai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const prompt = `You are an orchestration agent. Given these sections: ${sections.join(',')} and a customer brief:\n` +
-    `Title: ${title}\nClient: ${client}\nDetails: ${details}.\n` +
-    `Assign each section to one of these roles: Account Manager, Project Manager, Engineer, Business Analyst, Finance, Legal, Customer. Return a JSON object mapping section names to roles.`;
-  const resp = await ai.chat.completions.create({
-    model,
-    messages: [{ role: 'system', content: prompt }]
-  });
+  // Production: delegate to Collaboration Orchestrator assistant
+  const orchestratorId = await createAssistant('Collaboration Orchestrator');
+  const prompt = `Assign these sections to roles: ${sections.join(', ')} for title=${title}, client=${client}, details=${details}. Return JSON mapping section to role.`;
+  const raw = await getAssistantResponse(orchestratorId, prompt);
+  console.log(`[orchestratorAgent] Raw section assignments response: ${raw}`);
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new Error('Empty assistant response for section assignments');
+  }
+  // Extract JSON object from response
+  let jsonStr = raw.trim();
+  const first = jsonStr.indexOf('{');
+  const last = jsonStr.lastIndexOf('}');
+  if (first > 0 && last > first) {
+    jsonStr = jsonStr.substring(first, last + 1);
+    console.log('[orchestratorAgent] Trimmed JSON string:', jsonStr);
+  }
   try {
-    return JSON.parse(resp.choices[0].message.content);
+    return JSON.parse(jsonStr);
   } catch (e) {
+    console.error('[orchestratorAgent] JSON.parse error:', e.message);
     throw new Error('Failed to parse section assignments');
   }
 }
@@ -38,18 +46,25 @@ async function determineDependencies({ sections, title, client, details }) {
     return {};
   }
 
-  // Production: use OpenAI SDK
-  const ai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const prompt = `You are an orchestration agent. Given these sections: ${sections.join(',')} and brief:\n` +
-    `Title: ${title}, Client: ${client}, Details: ${details}.\n` +
-    `Determine dependencies between sections. Return a JSON object where keys are section names and values are arrays of section names they depend on.`;
-  const resp = await ai.chat.completions.create({
-    model,
-    messages: [{ role: 'system', content: prompt }]
-  });
+  // Production: delegate to Collaboration Orchestrator assistant
+  const orchestratorId = await createAssistant('Collaboration Orchestrator');
+  const prompt = `Determine dependencies among sections: ${sections.join(', ')} for title=${title}, client=${client}, details=${details}. Return JSON mapping section to dependency array.`;
+  const rawDep = await getAssistantResponse(orchestratorId, prompt);
+  console.log(`[orchestratorAgent] Raw dependencies response: ${rawDep}`);
+  if (typeof rawDep !== 'string' || !rawDep.trim()) {
+    throw new Error('Empty assistant response for dependencies');
+  }
+  let depJson = rawDep.trim();
+  const f = depJson.indexOf('{');
+  const l = depJson.lastIndexOf('}');
+  if (f > 0 && l > f) {
+    depJson = depJson.substring(f, l + 1);
+    console.log('[orchestratorAgent] Trimmed dependencies JSON string:', depJson);
+  }
   try {
-    return JSON.parse(resp.choices[0].message.content);
+    return JSON.parse(depJson);
   } catch (e) {
+    console.error('[orchestratorAgent] JSON.parse dependencies error:', e.message);
     throw new Error('Failed to parse dependencies');
   }
 }

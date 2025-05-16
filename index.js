@@ -7,6 +7,7 @@ require('dotenv').config();
 const { generateProposal } = require('./agents/proposalAgent');
 const { collaborateProposal } = require('./agents/collaborativeAgent');
 const { createAssistant, getAssistantResponse } = require('./agents/assistantAgent');
+const { assistantDefinitions } = require('./agents/assistantDefinitions');
 const { assignSections, determineDependencies } = require('./agents/orchestratorAgent');
 const { runFullFlow } = require('./agents/flowAgent');
 const swaggerJsDoc = require('swagger-jsdoc');
@@ -33,9 +34,8 @@ const swaggerOptions = {
       version: '1.0.0',
       description: 'API documentation for the Proposal Generator service',
     },
-    servers: [
-      { url: `http://localhost:${port}` }
-    ],
+    // API server URL used by Swagger Try-It-Out; default to relative root or override with BASE_URL
+    servers: [ { url: process.env.BASE_URL || '/' } ],
     components: {
       schemas: {
         Proposal: {
@@ -185,15 +185,100 @@ const swaggerOptions = {
             '500': { description: 'Server error' }
           }
         }
+      },
+      '/agents/assistants': {
+        post: {
+          summary: 'Create assistants based on definitions or a single assistant',
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    role: { type: 'string' },
+                    instructions: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '201': {
+              description: 'Assistant(s) created',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    additionalProperties: { type: 'string' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/agents/assistants/{assistantId}/messages': {
+        post: {
+          summary: 'Send a message to an assistant thread',
+          parameters: [
+            {
+              in: 'path',
+              name: 'assistantId',
+              schema: { type: 'string' },
+              required: true
+            }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Assistant reply',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      reply: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
-  apis: []
+  apis: ['./index.js']
 };
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 app.use(express.json());
+
+// Global error handler for invalid JSON
+app.use((err, req, res, next) => {
+  // Identify JSON parse errors by type or message
+  const isJsonError = err instanceof SyntaxError
+    || err.type === 'entity.parse.failed'
+    || /Unexpected token/.test(err.message);
+  if (isJsonError) {
+    console.error('Invalid JSON payload:', err.message);
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+  next(err);
+});
 
 app.get('/', (req, res) => {
   res.send('Hello, world!');
@@ -343,29 +428,109 @@ app.post('/agents/collaborate', async (req, res) => {
   }
 });
 
-// Create assistant endpoint
+// Assistant creation and setup
 app.post('/agents/assistants', async (req, res) => {
-  const schema = Joi.object({ role: Joi.string().required(), instructions: Joi.string().required() });
-  const { error, value } = schema.validate(req.body);
-  if (error) return res.status(400).json({ error: error.details[0].message });
-  try {
-    const assistantId = await createAssistant(value.role, value.instructions);
-    res.status(201).json({ assistantId });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to create assistant' });
+  const { role, instructions } = req.body || {};
+  // Single assistant creation
+  if (role || instructions) {
+    // Validate request body
+    if (!role || typeof role !== 'string' || !instructions || typeof instructions !== 'string') {
+      return res.status(400).json({ error: 'role and instructions are required strings' });
+    }
+    try {
+      const assistantId = await createAssistant(role, instructions);
+      return res.status(201).json({ assistantId });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
   }
+  // Batch assistant creation if no role/instructions provided
+  try {
+    const results = {};
+    // Make sure assistantDefinitions exists and is an object
+    if (assistantDefinitions && typeof assistantDefinitions === 'object') {
+      for (const [key, def] of Object.entries(assistantDefinitions)) {
+        const id = await createAssistant(key);
+        results[key] = id;
+      }
+    } else {
+      console.error('assistantDefinitions is not properly defined:', assistantDefinitions);
+    }
+    return res.status(200).json(results);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+  // Swagger definitions for request
+  /**
+   * @swagger
+   * /agents/assistants:
+   *   post:
+   *     summary: Create assistants based on definitions or a single assistant
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               role:
+   *                 type: string
+   *               instructions:
+   *                 type: string
+   *     responses:
+   *       '201':
+   *         description: Assistant(s) created
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               additionalProperties:
+   *                 type: string
+   */
 });
 
-// Message assistant endpoint
-app.post('/agents/assistants/:id/messages', async (req, res) => {
-  const schema = Joi.object({ message: Joi.string().required() });
-  const { error, value } = schema.validate(req.body);
-  if (error) return res.status(400).json({ error: error.details[0].message });
+// Assistant messaging endpoint
+app.post('/agents/assistants/:assistantId/messages', async (req, res) => {
+  /**
+   * @swagger
+   * /agents/assistants/{assistantId}/messages:
+   *   post:
+   *     summary: Send a message to an assistant thread
+   *     parameters:
+   *       - in: path
+   *         name: assistantId
+   *         schema:
+   *           type: string
+   *         required: true
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               message:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: Assistant reply
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 reply:
+   *                   type: string
+   */
+  const { assistantId } = req.params;
+  const { message } = req.body || {};
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'message is required string' });
+  }
   try {
-    const reply = await getAssistantResponse(req.params.id, value.message);
-    res.json({ reply });
+    const reply = await getAssistantResponse(assistantId, message);
+    return res.json({ reply });
   } catch (e) {
-    res.status(500).json({ error: 'Assistant message failed' });
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -460,6 +625,11 @@ app.get('/agents/orchestrate/:id/status', (req, res) => {
 
 // Full QA & review flow endpoint
 app.post('/agents/flow', async (req, res) => {
+  console.log('[FlowRoute] received body:', JSON.stringify(req.body));
+  if (!req.body || typeof req.body.brief !== 'object') {
+    console.error('[FlowRoute] Missing `brief` object in request body');
+    return res.status(400).json({ error: '`brief` object is required' });
+  }
   const schema = Joi.object({ brief: Joi.object().required() });
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.details[0].message });
@@ -472,7 +642,8 @@ app.post('/agents/flow', async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(port, () => {
+  // Listen on all network interfaces for container connectivity
+  app.listen(port, '0.0.0.0', () => {
     console.log(`Server is running on port ${port}`);
   });
 }

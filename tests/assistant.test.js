@@ -17,6 +17,22 @@ describe('Assistant endpoints', () => {
     expect(res.body).toHaveProperty('error');
   });
 
+  it('should validate request body when missing role', async () => {
+    const res = await request(app)
+      .post('/agents/assistants')
+      .send({ instructions: 'Do something' });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+
+  it('should reject non-string role and instructions types', async () => {
+    const res = await request(app)
+      .post('/agents/assistants')
+      .send({ role: 123, instructions: { text: 'Invalid' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+
   it('POST /agents/assistants/:id/messages should return test reply', async () => {
     const assistantId = 'test-assistant';
     const res = await request(app)
