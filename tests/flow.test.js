@@ -31,15 +31,18 @@ describe('POST /agents/flow', () => {
     expect(Array.isArray(res.body.questionsAndAnswers.organizedQuestions.organizedQuestions)).toBe(true);
     expect(typeof res.body.questionsAndAnswers.customerAnswers).toBe('string');
 
-    // Development drafts and reviews
+    // Development drafts, reviews, and revised content
     sections.forEach(section => {
       expect(res.body.development[section]).toContain(`Draft for ${section}`);
-      expect(res.body.reviews[section]).toBe(`Review comment for ${section}`);
+      expect(res.body.reviews[section]).toHaveProperty('round1');
+      expect(res.body.reviews[section]).toHaveProperty('round2');
+      expect(res.body.reviews[section]).toHaveProperty('customerQuestions');
+      expect(res.body.revisedDevelopment[section]).toContain(`Revised draft for ${section}`);
     });
 
     // Approval and compilation
     expect(res.body.approval).toBe('Final approval granted');
-    const expectedAssembled = sections.map(sec => res.body.development[sec]).join('\n\n');
+    const expectedAssembled = sections.map(sec => res.body.revisedDevelopment[sec]).join('\n\n');
     expect(res.body.assembled).toBe(expectedAssembled);
   });
 
