@@ -11,12 +11,12 @@ const temperature = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7;
 async function assignSections({ sections, title, client, details, threadId = null }) {
   if (process.env.NODE_ENV === 'test' || !process.env.OPENAI_API_KEY) {
     const mapping = {};
-    sections.forEach(sec => { mapping[sec] = 'Account Manager'; });
+    sections.forEach(sec => { mapping[sec] = 'sp_Account_Manager'; });
     return mapping;
   }
 
   // Production: delegate to Collaboration Orchestrator assistant
-  const orchestratorId = await createAssistant('Collaboration Orchestrator');
+  const orchestratorId = await createAssistant('sp_Collaboration_Orchestrator');
   
   let thread = threadId;
   let prompt;
@@ -61,7 +61,7 @@ async function determineDependencies({ sections, title, client, details }) {
   }
 
   // Production: delegate to Collaboration Orchestrator assistant
-  const orchestratorId = await createAssistant('Collaboration Orchestrator');
+  const orchestratorId = await createAssistant('sp_Collaboration_Orchestrator');
   const prompt = `Determine dependencies among sections: ${sections.join(', ')} for title=${title}, client=${client}, details=${details}. Return JSON mapping section to dependency array.`;
   const rawDep = await getAssistantResponse(orchestratorId, prompt);
   console.log(`[orchestratorAgent] Raw dependencies response: ${rawDep}`);

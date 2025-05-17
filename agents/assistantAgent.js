@@ -40,7 +40,7 @@ if (useStub) {
 
   // Map arbitrary role names to our defined assistant roles
   function mapRoleToAssistant(role) {
-    if (!role) return 'Collaboration Orchestrator';
+    if (!role) return 'sp_Collaboration_Orchestrator';
     
     // Direct match with our assistants
     const directMatch = Object.keys(assistantDefinitions).find(
@@ -53,56 +53,61 @@ if (useStub) {
     
     // Account Manager variations
     if (roleLower.includes('account') || roleLower === 'am') {
-      return 'RPE Account Manager (AM)';
+      return 'sp_Account_Manager';
     }
     
     // Project Manager variations
     if (roleLower.includes('project manager') || roleLower === 'pm' || roleLower === 'project') {
-      return 'RPE Project Manager (PM)';
+      return 'sp_Project_Manager';
     }
     
     // Commercial/Finance variations
     if (roleLower.includes('commercial') || roleLower.includes('finance') || 
         roleLower.includes('pricing') || roleLower === 'cm') {
-      return 'RPE Commercial Manager (CM)';
+      return 'sp_Commercial_Manager';
     }
     
     // Legal variations
     if (roleLower.includes('legal') || roleLower.includes('counsel') || roleLower === 'lc') {
-      return 'RPE Legal Counsel (LC)';
+      return 'sp_Legal_Counsel';
     }
     
     // Technical roles
     if (roleLower.includes('solution') || roleLower.includes('architect') || roleLower === 'sa') {
-      return 'RPE Solution Architect (SA)';
+      return 'sp_Solution_Architect';
     }
     
     if (roleLower.includes('data architect') || roleLower === 'da') {
-      return 'RPE Data Architect (DA)';
+      return 'sp_Data_Architect';
     }
     
     if (roleLower.includes('engineer') || roleLower.includes('technical') || roleLower === 'le') {
-      return 'RPE Lead Engineer (LE)';
+      return 'sp_Lead_Engineer';
     }
     
     // Customer variations
     if (roleLower.includes('customer') || roleLower === 'cu') {
-      return 'RPE Customer (CU)';
+      return 'cst_Customer';
     }
     
     // Marketing/creative roles default to Account Manager
     if (roleLower.includes('marketing') || roleLower.includes('design') || roleLower.includes('creative')) {
-      return 'RPE Account Manager (AM)';
+      return 'sp_Account_Manager';
     }
     
     // Business Analyst also defaults to Account Manager
     if (roleLower.includes('business analyst') || roleLower.includes('analyst')) {
-      return 'RPE Account Manager (AM)';
+      return 'sp_Account_Manager';
+    }
+    
+    // Collaboration Orchestrator variations
+    if (roleLower.includes('orchestrator') || roleLower.includes('collaboration')) {
+      return 'sp_Collaboration_Orchestrator';
     }
     
     // Default to Account Manager for unknown roles
     console.log(`[assistantAgent] Unknown role "${role}" mapped to Account Manager`);
-    return 'RPE Account Manager (AM)';
+    return 'sp_Account_Manager';
   }
 
   async function createAssistant(role) {

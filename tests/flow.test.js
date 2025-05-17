@@ -21,14 +21,15 @@ describe('POST /agents/flow', () => {
     const sections = Object.keys(defaultTemplate);
     expect(res.body.sections).toEqual(sections);
     sections.forEach(section => {
-      expect(res.body.assignments[section]).toBe('Account Manager');
+      expect(res.body.assignments[section]).toBe('sp_Account_Manager');
     });
 
-    // Questions and answers
-    expect(Array.isArray(res.body.questions)).toBe(true);
-    expect(res.body.questions).toHaveLength(sections.length);
-    expect(Array.isArray(res.body.answers)).toBe(true);
-    expect(res.body.answers.every(ans => ans.startsWith('Mock answer to'))).toBe(true);
+    // Questions and answers - new format
+    expect(res.body.questionsAndAnswers).toHaveProperty('organizedQuestions');
+    expect(res.body.questionsAndAnswers).toHaveProperty('customerAnswers');
+    expect(res.body.questionsAndAnswers.organizedQuestions).toHaveProperty('organizedQuestions');
+    expect(Array.isArray(res.body.questionsAndAnswers.organizedQuestions.organizedQuestions)).toBe(true);
+    expect(typeof res.body.questionsAndAnswers.customerAnswers).toBe('string');
 
     // Development drafts and reviews
     sections.forEach(section => {

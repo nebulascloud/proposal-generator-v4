@@ -3,15 +3,15 @@ const app = require('../index');
 
 // Define expected roles directly in the test (to avoid import issues during testing)
 const expectedRoles = [
-  "RPE Account Manager (AM)",
-  "RPE Project Manager (PM)",
-  "RPE Commercial Manager (CM)",
-  "RPE Legal Counsel (LC)",
-  "RPE Solution Architect (SA)",
-  "RPE Data Architect (DA)",
-  "RPE Lead Engineer (LE)",
-  "RPE Customer (CU)",
-  "Collaboration Orchestrator"
+  "sp_Account_Manager",
+  "sp_Project_Manager",
+  "sp_Commercial_Manager",
+  "sp_Legal_Counsel",
+  "sp_Solution_Architect",
+  "sp_Data_Architect",
+  "sp_Lead_Engineer",
+  "cst_Customer",
+  "sp_Collaboration_Orchestrator"
 ];
 
 describe('POST /agents/assistants', () => {
