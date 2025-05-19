@@ -68,22 +68,13 @@ q3. We need integration with our Oracle ERP system and Salesforce CRM.`;
       development[section] = `Draft for ${section} incorporating all customer answers about business objectives and technical requirements.`;
     }
     
-    // Mock reviews from different assistants for test environment
+    // Mock reviews using the new Quality Manager approach for test environment
     const reviews = {};
     sections.forEach(sec => {
       reviews[sec] = {
-        round1: {
-          'sp_Account_Manager': 'Review comment from Account Manager',
-          'sp_Solution_Architect': 'Review comment from Solution Architect',
-          'sp_Commercial_Manager': 'Review comment from Commercial Manager'
-        },
+        review: 'Review feedback from the Quality Manager covering all aspects of the section including strategy, sales, technology, delivery, and commercial considerations.',
         customerQuestions: ['How do you plan to measure ROI?', 'What is your timeline for implementation?'],
-        customerAnswers: 'Mock answers to review questions',
-        round2: {
-          'sp_Account_Manager': 'Follow-up review from Account Manager',
-          'sp_Solution_Architect': 'Follow-up review from Solution Architect',
-          'sp_Commercial_Manager': 'Follow-up review from Commercial Manager'
-        }
+        customerAnswers: 'Mock answers to review questions'
       };
     });
     
@@ -307,40 +298,35 @@ Your draft should be well-structured, persuasive, and demonstrate expert underst
     development[section] = await getAssistantResponse(aid, prompt, mainThread.id, { skipContextReminder: true });
   }
   
-  // Step 6: ENHANCED REVIEW PROCESS - multi-assistant reviews, customer feedback, and revisions
+  // Step 6: QUALITY MANAGER REVIEW PROCESS - dedicated review, customer feedback, and revisions
   const reviews = {};
   const revisedDevelopment = {};
-
-  // Function to get all specialists except the section owner
-  function getReviewingSpecialists(sectionOwner) {
-    return specialistRoles.filter(role => 
-      role !== sectionOwner && role !== 'cst_Customer' && !role.includes('Collaboration_Orchestrator')
-    );
-  }
 
   // Post information about the review process starting
   await openai.beta.threads.messages.create(mainThread.id, {
     role: 'user',
-    content: `We are now starting the collaborative review process where each section will be reviewed by multiple specialists, followed by customer input and revisions from the original author.`
+    content: `We are now starting the review process where each section will be reviewed by our Quality Manager, followed by customer input and revisions from the original author.`
   });
 
-  // Process each section for FIRST ROUND of reviews
-  console.log("[flowAgent] Starting first round of section reviews");
+  // Create Quality Manager assistant
+  const qualityManagerId = await createAssistant('sp_Quality_Manager');
+
+  // Process each section for review
+  console.log("[flowAgent] Starting Quality Manager reviews");
   for (const [section, ownerRole] of Object.entries(assignments)) {
     const sectionTitle = section;
     const sectionContent = development[section];
     
     // Initialize reviews collection for this section
     reviews[section] = {
-      round1: {},
+      review: '',
       customerQuestions: [],
-      customerAnswers: '',
-      round2: {}
+      customerAnswers: ''
     };
     
-    // FIRST: Have the orchestrator review to start the process
-    console.log(`[flowAgent] Requesting orchestrator review for "${section}"`);
-    const orchestratorReviewPrompt = `Please review the following section and provide feedback, suggested revisions, questions for the drafting agent, and questions for the customer. As the first reviewer, establish a foundation for others to build upon.
+    // Have the Quality Manager review each section
+    console.log(`[flowAgent] Requesting Quality Manager review for "${section}"`);
+    const qualityManagerReviewPrompt = `Please review the following section and provide feedback, suggested revisions, questions for the drafting agent, and questions for the customer. Only include customer questions if they are truly necessary or high-value.
 
     Title: ${sectionTitle}
     Content: ${sectionContent}
@@ -349,53 +335,28 @@ Your draft should be well-structured, persuasive, and demonstrate expert underst
     1. General feedback on the section.
     2. Suggested revisions to improve the section.
     3. Questions for the drafting agent (${ownerRole.replace('sp_', '')}).
-    4. Questions for the customer.`;
+    4. Questions for the customer (only if high-value and essential).`;
     
-    const orchestratorReview = await getAssistantResponse(orchestratorId, orchestratorReviewPrompt, mainThread.id, { skipContextReminder: true });
-    reviews[section].round1['sp_Collaboration_Orchestrator'] = orchestratorReview;
-    
-    // THEN: Have each specialist (except the owner) review the section
-    const reviewingSpecialists = getReviewingSpecialists(ownerRole);
-    for (const reviewerRole of reviewingSpecialists) {
-      const reviewerId = await createAssistant(reviewerRole);
-      
-      console.log(`[flowAgent] Requesting ${reviewerRole} review for "${section}"`);
-      const reviewPrompt = `Please review the following section and provide feedback, suggested revisions, questions for the drafting agent, and questions for the customer. Pay attention to the other assistants' review comments in the chat and don't repeat the same feedback, suggested revisions, or questions.
-
-    Title: ${sectionTitle}
-    Content: ${sectionContent}
-
-    Your feedback should include:
-    1. General feedback on the section.
-    2. Suggested revisions to improve the section.
-    3. Questions for the drafting agent (${ownerRole.replace('sp_', '')}).
-    4. Questions for the customer.`;
-      
-      const review = await getAssistantResponse(reviewerId, reviewPrompt, mainThread.id, { skipContextReminder: true });
-      reviews[section].round1[reviewerRole] = review;
-    }
+    const qualityManagerReview = await getAssistantResponse(qualityManagerId, qualityManagerReviewPrompt, mainThread.id, { skipContextReminder: true });
+    reviews[section].review = qualityManagerReview;
   }
   
-  // Step 6B: Extract customer questions from reviews and get customer answers
-  console.log("[flowAgent] Extracting customer questions from reviews");
+  // Step 6B: Extract customer questions from Quality Manager reviews and get customer answers
+  console.log("[flowAgent] Extracting customer questions from Quality Manager reviews");
   
   const allCustomerQuestions = {};
   for (const [section, reviewData] of Object.entries(reviews)) {
-    // Have the orchestrator extract and organize customer questions from the reviews
-    const reviewContent = Object.entries(reviewData.round1)
-      .map(([role, review]) => `${role.replace('sp_', '')}'s Review:\n${review}`)
-      .join('\n\n');
-    
-    const extractQuestionsPrompt = `From the following review comments for the "${section}" section, extract all questions intended for the customer. Organize these questions, removing duplicates and similar questions.
+    // Have the orchestrator extract customer questions from the Quality Manager review
+    const extractQuestionsPrompt = `From the following Quality Manager review for the "${section}" section, extract all questions intended for the customer. Only include high-value questions that would genuinely help improve the proposal.
 
-Review comments:
-${reviewContent}
+Review:
+${reviewData.review}
 
-Return ONLY the list of unique, clear questions for the customer, numbered for reference.`;
+Return ONLY the list of unique, clear questions for the customer, numbered for reference. If there are no high-value questions for the customer, return "No questions for the customer."`;
     
     const extractedQuestions = await getAssistantResponse(orchestratorId, extractQuestionsPrompt, mainThread.id, { skipContextReminder: true });
     
-    if (extractedQuestions.trim()) {
+    if (extractedQuestions.trim() && !extractedQuestions.includes("No questions")) {
       allCustomerQuestions[section] = extractedQuestions;
       reviews[section].customerQuestions = extractedQuestions.split('\n')
         .filter(q => q.trim())
@@ -407,7 +368,7 @@ Return ONLY the list of unique, clear questions for the customer, numbered for r
   if (Object.keys(allCustomerQuestions).length > 0) {
     console.log("[flowAgent] Sending review-generated questions to customer");
     
-    let customerReviewQuestionsPrompt = `Based on our initial draft proposal, our team has some follow-up questions to help us refine the content. Please provide answers to the following questions:\n\n`;
+    let customerReviewQuestionsPrompt = `Based on our initial draft proposal, we have some follow-up questions to help us refine the content. Please provide answers to the following questions:\n\n`;
     
     for (const [section, questions] of Object.entries(allCustomerQuestions)) {
       customerReviewQuestionsPrompt += `\n## Questions regarding the "${section}" section:\n${questions}\n`;
@@ -430,86 +391,47 @@ Return ONLY the list of unique, clear questions for the customer, numbered for r
   }
   
   // Step 6C: Have original authors revise their sections based on feedback and customer answers
-  console.log("[flowAgent] Authors revising sections based on feedback");
+  console.log("[flowAgent] Authors revising sections based on Quality Manager feedback");
   
   for (const [section, ownerRole] of Object.entries(assignments)) {
     const authorId = await createAssistant(ownerRole);
     
-    // Compile all the review feedback
-    const reviewSummary = Object.entries(reviews[section].round1)
-      .map(([role, review]) => `${role.replace('sp_', '')}'s Review:\n${review}`)
-      .join('\n\n');
-    
     // Create revision prompt with all context
-    const revisionPrompt = `Please revise your draft for the "${section}" section based on the feedback received and the customer's answers to follow-up questions.
+    const revisionPrompt = `Please revise your draft for the "${section}" section based on the Quality Manager's feedback and any customer answers to follow-up questions.
 
 Original Draft:
 ${development[section]}
 
-Review Feedback:
-${reviewSummary}
+Quality Manager's Review:
+${reviews[section].review}
 
 ${reviews[section].customerQuestions.length > 0 ? `
 Customer's Answers to Follow-up Questions:
 ${reviews[section].customerAnswers}
 ` : 'No specific follow-up questions were asked of the customer for this section.'}
 
-Please address the feedback and questions from other specialists, and incorporate any insights from the customer's answers. Return a revised version of your section that addresses all the relevant feedback.`;
+Please address the feedback and questions from the Quality Manager, and incorporate any insights from the customer's answers. Return a revised version of your section that addresses all the relevant feedback.`;
     
     console.log(`[flowAgent] Requesting revision of "${section}" from ${ownerRole}`);
     revisedDevelopment[section] = await getAssistantResponse(authorId, revisionPrompt, mainThread.id, { skipContextReminder: true });
   }
   
-  // Step 6D: SECOND ROUND of reviews on the revised content
-  console.log("[flowAgent] Starting second round of section reviews");
+  // Step 7: Final Quality Manager review and approval
+  console.log("[flowAgent] Requesting final review and approval");
   
-  for (const [section, ownerRole] of Object.entries(assignments)) {
-    // Have each specialist (except the owner) review the REVISED section
-    const reviewingSpecialists = getReviewingSpecialists(ownerRole);
-    
-    for (const reviewerRole of reviewingSpecialists) {
-      const reviewerId = await createAssistant(reviewerRole);
-      
-      console.log(`[flowAgent] Requesting ${reviewerRole} second review for "${section}"`);
-      const secondReviewPrompt = `Please review the REVISED version of the "${section}" section. Confirm whether your previous feedback has been addressed and provide any final suggestions.
-
-Original feedback summary:
-${reviews[section].round1[reviewerRole] || "You didn't provide feedback on the first draft of this section."}
-
-Revised content:
-${revisedDevelopment[section]}
-
-Please keep your response brief, focusing on:
-1. Has your feedback been adequately addressed? (Yes/No)
-2. Any critical remaining issues that MUST be fixed (if any)
-3. Minor suggestions that could further improve the section (optional)`;
-      
-      const secondReview = await getAssistantResponse(reviewerId, secondReviewPrompt, mainThread.id, { skipContextReminder: true });
-      reviews[section].round2[reviewerRole] = secondReview;
-    }
-  }
-  
-  // Step 7: Final orchestrator review and approval
-  console.log("[flowAgent] Requesting final review and approval from orchestrator");
-  
-  // Compile all second-round feedback for the orchestrator's consideration
-  const finalFeedbackSummary = {};
-  for (const [section, reviewData] of Object.entries(reviews)) {
-    finalFeedbackSummary[section] = Object.entries(reviewData.round2)
-      .map(([role, review]) => `${role.replace('sp_', '')}: ${review}`)
-      .join('\n');
-  }
+  // Create a summary of all sections for the final review
+  const sectionsForReview = Object.entries(revisedDevelopment).map(([section, content]) => 
+    `## ${section}\n${content.substring(0, 300)}... (truncated)`
+  ).join('\n\n');
   
   const finalReviewPrompt = `Please review all sections after revisions and provide final approval or any critical last recommendations.
 
-Feedback summary from the second review round:
-${Object.entries(finalFeedbackSummary).map(([section, feedback]) => 
-  `## ${section}\n${feedback}`
-).join('\n\n')}
+Here are the revised sections (truncated for brevity):
+${sectionsForReview}
 
-If all critical issues have been addressed, please provide your final approval.`;
+Please provide your final approval if all sections now meet quality standards, or note any remaining critical issues that must be addressed.`;
   
-  const approval = await getAssistantResponse(orchestratorId, finalReviewPrompt, mainThread.id, { skipContextReminder: true });
+  const approval = await getAssistantResponse(qualityManagerId, finalReviewPrompt, mainThread.id, { skipContextReminder: true });
   
   // Step 8: Final assembly using the REVISED sections
   const assembled = sections.map(sec => revisedDevelopment[sec]).join('\n\n');

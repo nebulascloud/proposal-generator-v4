@@ -34,8 +34,7 @@ describe('POST /agents/flow', () => {
     // Development drafts, reviews, and revised content
     sections.forEach(section => {
       expect(res.body.development[section]).toContain(`Draft for ${section}`);
-      expect(res.body.reviews[section]).toHaveProperty('round1');
-      expect(res.body.reviews[section]).toHaveProperty('round2');
+      expect(res.body.reviews[section]).toHaveProperty('review');
       expect(res.body.reviews[section]).toHaveProperty('customerQuestions');
       expect(res.body.revisedDevelopment[section]).toContain(`Revised draft for ${section}`);
     });
