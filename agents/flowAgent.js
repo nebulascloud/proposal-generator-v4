@@ -68,20 +68,32 @@ q3. We need integration with our Oracle ERP system and Salesforce CRM.`;
       development[section] = `Draft for ${section} incorporating all customer answers about business objectives and technical requirements.`;
     }
     
+    // Mock reviews using the new Quality Manager approach for test environment
     const reviews = {};
     sections.forEach(sec => {
-      reviews[sec] = `Review comment for ${sec}`;
+      reviews[sec] = {
+        review: 'Review feedback from the Quality Manager covering all aspects of the section including strategy, sales, technology, delivery, and commercial considerations.',
+        customerQuestions: ['How do you plan to measure ROI?', 'What is your timeline for implementation?'],
+        customerAnswers: 'Mock answers to review questions'
+      };
+    });
+    
+    // Mock revised content
+    const revisedDevelopment = {};
+    sections.forEach(sec => {
+      revisedDevelopment[sec] = `Revised draft for ${sec} after incorporating feedback and customer answers.`;
     });
     
     const approval = 'Final approval granted';
-    const assembled = sections.map(sec => development[sec]).join('\n\n');
+    const assembled = sections.map(sec => revisedDevelopment[sec]).join('\n\n');
     return { 
       analysis, 
       sections, 
       assignments, 
-      questionsAndAnswers, // New format replacing separate questions and answers
+      questionsAndAnswers, 
       development, 
       reviews, 
+      revisedDevelopment,
       approval, 
       assembled 
     };
@@ -286,28 +298,156 @@ Your draft should be well-structured, persuasive, and demonstrate expert underst
     development[section] = await getAssistantResponse(aid, prompt, mainThread.id, { skipContextReminder: true });
   }
   
-  // Step 6: reviews by orchestrator
+  // Step 6: QUALITY MANAGER REVIEW PROCESS - dedicated review, customer feedback, and revisions
   const reviews = {};
-  for (const section of sections) {
-    // Use context-aware prompts for reviews
-    const reviewPrompt = "Review the following draft for the \"" + section + "\" section. Ensure it aligns with the project goals and addresses the client's needs:\n\n" + development[section];
-    reviews[section] = await getAssistantResponse(orchestratorId, reviewPrompt, mainThread.id, { skipContextReminder: true });
+  const revisedDevelopment = {};
+
+  // Post information about the review process starting
+  await openai.beta.threads.messages.create(mainThread.id, {
+    role: 'user',
+    content: `We are now starting the review process where each section will be reviewed by our Quality Manager, followed by customer input and revisions from the original author.`
+  });
+
+  // Create Quality Manager assistant
+  const qualityManagerId = await createAssistant('sp_Quality_Manager');
+
+  // Process each section for review
+  console.log("[flowAgent] Starting Quality Manager reviews");
+  for (const [section, ownerRole] of Object.entries(assignments)) {
+    const sectionTitle = section;
+    const sectionContent = development[section];
+    
+    // Initialize reviews collection for this section
+    reviews[section] = {
+      review: '',
+      customerQuestions: [],
+      customerAnswers: ''
+    };
+    
+    // Have the Quality Manager review each section
+    console.log(`[flowAgent] Requesting Quality Manager review for "${section}"`);
+    const qualityManagerReviewPrompt = `Please review the following section and provide feedback, suggested revisions, questions for the drafting agent, and questions for the customer. Only include customer questions if they are truly necessary or high-value.
+
+    Title: ${sectionTitle}
+    Content: ${sectionContent}
+
+    Your feedback should include:
+    1. General feedback on the section.
+    2. Suggested revisions to improve the section.
+    3. Questions for the drafting agent (${ownerRole.replace('sp_', '')}).
+    4. Questions for the customer (only if high-value and essential).`;
+    
+    const qualityManagerReview = await getAssistantResponse(qualityManagerId, qualityManagerReviewPrompt, mainThread.id, { skipContextReminder: true });
+    reviews[section].review = qualityManagerReview;
   }
   
-  // Step 7: final assembly
-  const assembled = sections.map(sec => development[sec]).join('\n\n');
-  const finalPrompt = "Finalize the complete proposal by assembling and harmonizing the following sections into a cohesive document:\n\n" + assembled;
-  const final = await getAssistantResponse(orchestratorId, finalPrompt, mainThread.id, { skipContextReminder: true });
+  // Step 6B: Extract customer questions from Quality Manager reviews and get customer answers
+  console.log("[flowAgent] Extracting customer questions from Quality Manager reviews");
   
-  console.log("[flowAgent] Completed flow using thread " + mainThread.id);
+  const allCustomerQuestions = {};
+  for (const [section, reviewData] of Object.entries(reviews)) {
+    // Have the orchestrator extract customer questions from the Quality Manager review
+    const extractQuestionsPrompt = `From the following Quality Manager review for the "${section}" section, extract all questions intended for the customer. Only include high-value questions that would genuinely help improve the proposal.
+
+Review:
+${reviewData.review}
+
+Return ONLY the list of unique, clear questions for the customer, numbered for reference. If there are no high-value questions for the customer, return "No questions for the customer."`;
+    
+    const extractedQuestions = await getAssistantResponse(orchestratorId, extractQuestionsPrompt, mainThread.id, { skipContextReminder: true });
+    
+    if (extractedQuestions.trim() && !extractedQuestions.includes("No questions")) {
+      allCustomerQuestions[section] = extractedQuestions;
+      reviews[section].customerQuestions = extractedQuestions.split('\n')
+        .filter(q => q.trim())
+        .map(q => q.replace(/^\d+\.?\s*/, '').trim());
+    }
+  }
+  
+  // If we have customer questions, send them to the customer
+  if (Object.keys(allCustomerQuestions).length > 0) {
+    console.log("[flowAgent] Sending review-generated questions to customer");
+    
+    let customerReviewQuestionsPrompt = `Based on our initial draft proposal, we have some follow-up questions to help us refine the content. Please provide answers to the following questions:\n\n`;
+    
+    for (const [section, questions] of Object.entries(allCustomerQuestions)) {
+      customerReviewQuestionsPrompt += `\n## Questions regarding the "${section}" section:\n${questions}\n`;
+    }
+    
+    customerReviewQuestionsPrompt += `\n\nYour answers will help us refine the proposal to better meet your needs.`;
+    
+    const customerReviewAnswers = await getAssistantResponse(customerId, customerReviewQuestionsPrompt, mainThread.id, { skipContextReminder: true });
+    
+    // Store customer answers in the reviews object
+    for (const section of Object.keys(allCustomerQuestions)) {
+      reviews[section].customerAnswers = customerReviewAnswers;
+    }
+    
+    // Add customer answers to the thread for context
+    await openai.beta.threads.messages.create(mainThread.id, {
+      role: 'user',
+      content: `The customer has provided answers to our review-generated questions. These answers should be considered during the revision process.`
+    });
+  }
+  
+  // Step 6C: Have original authors revise their sections based on feedback and customer answers
+  console.log("[flowAgent] Authors revising sections based on Quality Manager feedback");
+  
+  for (const [section, ownerRole] of Object.entries(assignments)) {
+    const authorId = await createAssistant(ownerRole);
+    
+    // Create revision prompt with all context
+    const revisionPrompt = `Please revise your draft for the "${section}" section based on the Quality Manager's feedback and any customer answers to follow-up questions.
+
+Original Draft:
+${development[section]}
+
+Quality Manager's Review:
+${reviews[section].review}
+
+${reviews[section].customerQuestions.length > 0 ? `
+Customer's Answers to Follow-up Questions:
+${reviews[section].customerAnswers}
+` : 'No specific follow-up questions were asked of the customer for this section.'}
+
+Please address the feedback and questions from the Quality Manager, and incorporate any insights from the customer's answers. Return a revised version of your section that addresses all the relevant feedback.`;
+    
+    console.log(`[flowAgent] Requesting revision of "${section}" from ${ownerRole}`);
+    revisedDevelopment[section] = await getAssistantResponse(authorId, revisionPrompt, mainThread.id, { skipContextReminder: true });
+  }
+  
+  // Step 7: Final Quality Manager review and approval
+  console.log("[flowAgent] Requesting final review and approval");
+  
+  // Create a summary of all sections for the final review
+  const sectionsForReview = Object.entries(revisedDevelopment).map(([section, content]) => 
+    `## ${section}\n${content.substring(0, 300)}... (truncated)`
+  ).join('\n\n');
+  
+  const finalReviewPrompt = `Please review all sections after revisions and provide final approval or any critical last recommendations.
+
+Here are the revised sections (truncated for brevity):
+${sectionsForReview}
+
+Please provide your final approval if all sections now meet quality standards, or note any remaining critical issues that must be addressed.`;
+  
+  const approval = await getAssistantResponse(qualityManagerId, finalReviewPrompt, mainThread.id, { skipContextReminder: true });
+  
+  // Step 8: Final assembly using the REVISED sections
+  const assembled = sections.map(sec => revisedDevelopment[sec]).join('\n\n');
+  const finalAssemblyPrompt = "Finalize the complete proposal by assembling and harmonizing the following revised sections into a cohesive document:\n\n" + assembled;
+  const final = await getAssistantResponse(orchestratorId, finalAssemblyPrompt, mainThread.id, { skipContextReminder: true });
+  
+  console.log("[flowAgent] Completed enhanced review flow using thread " + mainThread.id);
   return { 
     analysis, 
     assignments, 
-    questionsAndAnswers, // New consolidated format
+    questionsAndAnswers, 
     development, 
     reviews, 
-    final, 
-    assembled 
+    revisedDevelopment,
+    approval, 
+    assembled: final || assembled
   };
 }
 
