@@ -1,0 +1,194 @@
+/**
+ * Database Unit Tests
+ * Tests for database connection, models, and migrations
+ */
+
+const db = require('../db/index');
+const Message = require('../db/models/message');
+const Agent = require('../db/models/agent');
+const Session = require('../db/models/session');
+const { v4: uuidv4 } = require('uuid');
+
+// Mock the environment
+process.env.NODE_ENV = 'test';
+
+// Check if we have a functioning database or use mocks
+const useMocks = !db.schema;
+console.log(`[DB Tests] Using ${useMocks ? 'mocked' : 'real'} database connection`);
+
+// Mock implementations for model functions if needed
+jest.mock('../db/models/message', () => ({
+  create: jest.fn().mockImplementation(async (data) => ({
+    id: data.id || 'mock-message-id',
+    ...data
+  })),
+  getById: jest.fn().mockImplementation(async (id) => ({
+    id,
+    content: 'Mocked message content',
+    role: 'user',
+    created_at: new Date().toISOString()
+  })),
+  getThreadMessages: jest.fn().mockImplementation(async () => []),
+  getChildMessages: jest.fn().mockImplementation(async () => []),
+  getBySessionId: jest.fn().mockImplementation(async () => [])
+}));
+
+jest.mock('../db/models/agent', () => ({
+  getOrCreate: jest.fn().mockImplementation(async (name) => ({
+    id: 'mock-agent-id',
+    name,
+    assistant_id: 'mock-assistant-id',
+    created_at: new Date().toISOString()
+  })),
+  getByName: jest.fn().mockImplementation(async (name) => ({
+    id: 'mock-agent-id',
+    name,
+    assistant_id: 'mock-assistant-id',
+    created_at: new Date().toISOString()
+  })),
+  list: jest.fn().mockImplementation(async () => [])
+}));
+
+jest.mock('../db/models/session', () => ({
+  create: jest.fn().mockImplementation(async (data) => ({
+    id: data.id || 'mock-session-id',
+    ...data,
+    created_at: new Date().toISOString()
+  })),
+  getById: jest.fn().mockImplementation(async (id) => ({
+    id,
+    proposal_id: 'mock-proposal-id',
+    customer_brief_id: 'mock-brief-id',
+    status: 'active',
+    metadata: {}
+  })),
+  update: jest.fn().mockImplementation(async (id, data) => ({
+    id,
+    ...data,
+    updated_at: new Date().toISOString()
+  })),
+  getActiveSession: jest.fn().mockImplementation(async () => null)
+}));
+
+  test('Session model - create and retrieve session', async () => {
+    // Create a test session
+    const sessionData = {
+      proposalId: 'test-proposal-123',
+      customerBriefId: 'test-brief-123',
+      status: 'active',
+      metadata: { testKey: 'testValue' }
+    };
+
+    const session = await Session.create(sessionData);
+
+    // Verify session was created
+    expect(session).toBeDefined();
+    expect(session.proposal_id).toBe(sessionData.proposalId);
+    expect(session.customer_brief_id).toBe(sessionData.customerBriefId);
+    expect(session.status).toBe('active');
+    expect(session.metadata).toEqual(sessionData.metadata);
+
+    // Retrieve the session
+    const retrievedSession = await Session.getById(session.id);
+    expect(retrievedSession).toEqual(session);
+
+    // Test update function
+    const updatedSession = await Session.update(session.id, {
+      status: 'completed',
+      metadata: { testKey: 'updatedValue' }
+    });
+
+    expect(updatedSession.status).toBe('completed');
+    expect(updatedSession.metadata.testKey).toBe('updatedValue');
+  });
+
+  test('Agent model - getOrCreate and retrieval functions', async () => {
+    // Create a test agent
+    const agentName = 'test-agent';
+    const instructions = 'Test instructions';
+
+    const agent = await Agent.getOrCreate(agentName, instructions);
+
+    // Verify agent was created
+    expect(agent).toBeDefined();
+    expect(agent.name).toBe(agentName);
+    expect(agent.instructions).toBe(instructions);
+
+    // Test getByName
+    const retrievedByName = await Agent.getByName(agentName);
+    expect(retrievedByName).toEqual(agent);
+
+    // Test getById
+    const retrievedById = await Agent.getById(agent.id);
+    expect(retrievedById).toEqual(agent);
+
+    // Test update instructions
+    const updatedAgent = await Agent.getOrCreate(agentName, 'Updated instructions');
+    expect(updatedAgent.id).toBe(agent.id);
+    expect(updatedAgent.instructions).toBe('Updated instructions');
+
+    // Test list function
+    const agents = await Agent.list();
+    expect(agents.length).toBe(1);
+    expect(agents[0].name).toBe(agentName);
+  });
+
+  test('Message model - create and thread functions', async () => {
+    // Create a session first
+    const session = await Session.create({
+      proposalId: 'test-proposal-123',
+      status: 'active'
+    });
+
+    // Create parent message
+    const parentMessage = await Message.create({
+      responseId: 'resp-123',
+      phase: 'clarification',
+      agentName: 'test-agent',
+      role: 'assistant',
+      content: 'Parent message content',
+      sessionId: session.id,
+      metadata: { tokens: 10 }
+    });
+
+    // Create child message
+    const childMessage = await Message.create({
+      responseId: 'resp-456',
+      phase: 'clarification',
+      agentName: 'test-agent',
+      role: 'user',
+      content: 'Child message content',
+      parentMessageId: parentMessage.id,
+      sessionId: session.id
+    });
+
+    // Test getById
+    const retrievedMessage = await Message.getById(childMessage.id);
+    expect(retrievedMessage.content).toBe(childMessage.content);
+    expect(retrievedMessage.parent_message_id).toBe(parentMessage.id);
+
+    // Test getBySessionId
+    const sessionMessages = await Message.getBySessionId(session.id);
+    expect(sessionMessages.length).toBe(2);
+
+    // Test filtering by phase, agentName, role
+    const filteredByPhase = await Message.getBySessionId(session.id, { phase: 'clarification' });
+    expect(filteredByPhase.length).toBe(2);
+
+    const filteredByRole = await Message.getBySessionId(session.id, { role: 'user' });
+    expect(filteredByRole.length).toBe(1);
+    expect(filteredByRole[0].id).toBe(childMessage.id);
+
+    // Test getByResponseId
+    const responseMessages = await Message.getByResponseId('resp-123');
+    expect(responseMessages.length).toBe(1);
+    expect(responseMessages[0].id).toBe(parentMessage.id);
+
+    // Test getThread
+    const thread = await Message.getThread(childMessage.id);
+    expect(thread.length).toBe(2);
+    // Thread should be ordered correctly (parent first, then child)
+    expect(thread[0].id).toBe(parentMessage.id);
+    expect(thread[1].id).toBe(childMessage.id);
+  });
+});

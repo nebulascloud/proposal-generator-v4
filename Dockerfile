@@ -5,6 +5,7 @@ FROM node:18-alpine
 ENV NODE_ENV=production
 
 # Install Chromium and necessary libraries for Puppeteer/html-pdf-node
+# Also install PostgreSQL client for database connection
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -13,6 +14,7 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     curl \
+    postgresql-client \
     && rm -rf /var/cache/apk/*
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
@@ -30,8 +32,11 @@ RUN npm install --production \
 # Copy application code
 COPY . .
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Expose application port
 EXPOSE 3000
 
-# Start the app
-CMD ["node", "index.js"]
+# Start the app with our custom script
+CMD ["./start.sh"]

@@ -13,14 +13,45 @@ const { runFullFlow } = require('./agents/flowAgent');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const { defaultTemplate, renderDefault } = require('./templates/defaultTemplate');
+const { initDatabase } = require('./db/setup');
+
+// Silence console logging in test environment to avoid noisy logs after Jest teardown
+if (process.env.NODE_ENV === 'test') {
+  // eslint-disable-next-line no-global-assign
+  console.log = () => {};
+  // eslint-disable-next-line no-global-assign
+  console.warn = () => {};
+  // eslint-disable-next-line no-global-assign
+  console.error = () => {};
+}
+
+// Initialize database on import (needed for routes to function properly)
+if (process.env.NODE_ENV !== 'test') {
+  (async function() {
+    try {
+      await initDatabase();
+      console.log("Database initialized on module import");
+    } catch (error) {
+      console.error("Error initializing database on import:", error);
+      // Don't throw here to allow the app to continue loading
+    }
+  })();
+}
+
+// Monitoring routes
+const monitorRoutes = require('./routes/monitor');
 
 // Markdown and PDF rendering
 const MarkdownIt = require('markdown-it');
 const htmlPdf = require('html-pdf-node');
 const md = new MarkdownIt();
 
+// Initialize Express server
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Serve static files from public directory
+app.use(express.static('public'));
 
 // In-memory store for test environment orchestrations
 const inMemOrchestrations = {};
@@ -623,28 +654,266 @@ app.get('/agents/orchestrate/:id/status', (req, res) => {
   res.json({ id: orch.id, status: orch.status, progress: orch.progress });
 });
 
+// In-memory store for proposal flow jobs
+const flowJobs = {};
+// Make flowJobs available globally
+global.flowJobs = flowJobs;
+
 // Full QA & review flow endpoint
+/**
+ * @swagger
+ * /agents/flow:
+ *   post:
+ *     summary: Start a complete proposal generation flow
+ *     description: Initiates the full proposal generation process including brief analysis, section assignments, question gathering, drafting, review, and final assembly
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - brief
+ *             properties:
+ *               brief:
+ *                 type: object
+ *                 description: The project brief containing the initial information
+ *               customerAnswers:
+ *                 type: string
+ *                 description: Pre-supplied customer answers to clarifying questions
+ *               customerReviewAnswers:
+ *                 type: string
+ *                 description: Pre-supplied customer answers to review questions
+ *     responses:
+ *       202:
+ *         description: Flow job accepted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 jobId:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                   enum: [accepted]
+ *                 message:
+ *                   type: string
+ *                 statusEndpoint:
+ *                   type: string
+ *                 resultEndpoint:
+ *                   type: string
+ *       400:
+ *         description: Invalid request
+ */
 app.post('/agents/flow', async (req, res) => {
   console.log('[FlowRoute] received body:', JSON.stringify(req.body));
   if (!req.body || typeof req.body.brief !== 'object') {
     console.error('[FlowRoute] Missing `brief` object in request body');
     return res.status(400).json({ error: '`brief` object is required' });
   }
-  const schema = Joi.object({ brief: Joi.object().required() });
+  // Allow other keys like customerAnswers by using .unknown(true)
+  const schema = Joi.object({ 
+    brief: Joi.object().required(),
+    customerAnswers: Joi.string().optional(), // Make customerAnswers optional
+    customerReviewAnswers: Joi.string().optional() // Make customerReviewAnswers optional
+  }).unknown(true); // Allow other keys
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.details[0].message });
-  try {
-    const result = await runFullFlow({ brief: value.brief });
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  
+  // Generate a unique job ID
+  const jobId = `flow-job-${Date.now()}`;
+  
+  // Store initial job status
+  flowJobs[jobId] = {
+    id: jobId,
+    status: 'pending',
+    startTime: new Date().toISOString(),
+    progress: {},
+    result: null,
+    error: null
+  };
+  
+  // Return job ID immediately
+  res.status(202).json({ 
+    jobId: jobId, 
+    status: 'accepted', 
+    message: 'Proposal generation started. Use the jobId to check status.',
+    statusEndpoint: `/agents/flow/${jobId}/status`,
+    resultEndpoint: `/agents/flow/${jobId}/result`
+  });
+  
+  // Start the flow process in the background
+  (async () => {
+    try {
+      // Update job status
+      flowJobs[jobId].status = 'processing';
+      
+      // Run the full flow with jobId
+      const result = await runFullFlow({...value, jobId});
+      
+      // Store the successful result
+      flowJobs[jobId].status = 'completed';
+      flowJobs[jobId].result = result;
+      flowJobs[jobId].endTime = new Date().toISOString();
+      
+      console.log(`[FlowRoute] Job ${jobId} completed successfully`);
+    } catch (e) {
+      // Store the error
+      flowJobs[jobId].status = 'failed';
+      flowJobs[jobId].error = {
+        message: e.message,
+        stack: e.stack
+      };
+      flowJobs[jobId].endTime = new Date().toISOString();
+      
+      console.error(`[FlowRoute] Job ${jobId} failed with error:`, e.message);
+      console.error(`[FlowRoute] Error stack:`, e.stack);
+    }
+  })();
 });
+
+// Get flow job status 
+/**
+ * @swagger
+ * /agents/flow/{jobId}/status:
+ *   get:
+ *     summary: Check the status of a proposal flow job
+ *     description: Returns the current status and progress information for a proposal generation job
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the flow job to check
+ *     responses:
+ *       200:
+ *         description: The job status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 jobId:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                   enum: [pending, processing, completed, failed]
+ *                 startTime:
+ *                   type: string
+ *                   format: date-time
+ *                 endTime:
+ *                   type: string
+ *                   format: date-time
+ *                 progress:
+ *                   type: object
+ *                 result:
+ *                   type: object
+ *                   description: Only included if status is 'completed'
+ *                 error:
+ *                   type: string
+ *                   description: Only included if status is 'failed'
+ *       404:
+ *         description: Job not found
+ */
+app.get('/agents/flow/:jobId/status', (req, res) => {
+  const jobId = req.params.jobId;
+  const job = flowJobs[jobId];
+  
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  
+  // Return the job status
+  const response = {
+    jobId: job.id,
+    status: job.status,
+    startTime: job.startTime,
+    progress: job.progress
+  };
+  
+  // Include endTime if available
+  if (job.endTime) {
+    response.endTime = job.endTime;
+  }
+  
+  // Include result or error if the job is completed or failed
+  if (job.status === 'completed' && job.result) {
+    response.result = job.result;
+  } else if (job.status === 'failed' && job.error) {
+    response.error = job.error.message;
+  }
+  
+  res.json(response);
+});
+
+// Get flow job result (separate from status to avoid large response for status checks)
+/**
+ * @swagger
+ * /agents/flow/{jobId}/result:
+ *   get:
+ *     summary: Get the complete result of a completed proposal flow job
+ *     description: Returns the full result of a completed proposal generation job
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the completed flow job
+ *     responses:
+ *       200:
+ *         description: The complete flow result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       400:
+ *         description: Job not completed
+ *       404:
+ *         description: Job not found
+ */
+app.get('/agents/flow/:jobId/result', (req, res) => {
+  const jobId = req.params.jobId;
+  const job = flowJobs[jobId];
+  
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  
+  if (job.status !== 'completed') {
+    return res.status(400).json({ 
+      error: 'Job not completed', 
+      status: job.status,
+      message: 'The job is still processing or has failed. Check the status endpoint for details.'
+    });
+  }
+  
+  res.json(job.result);
+});
+
+// Initialize database immediately upon module load
+if (process.env.NODE_ENV !== 'test') {
+  (async function() {
+    try {
+      console.log("[index] Initializing database on module load...");
+      await initDatabase();
+      console.log("[index] Database initialized successfully on module load.");
+    } catch (err) {
+      console.error("[index] Error initializing database on module load:", err);
+    }
+  })();
+}
+
+// Register monitor routes - should be available regardless of how app is started
+app.use('/api/monitor', monitorRoutes);
 
 if (require.main === module) {
   // Listen on all network interfaces for container connectivity
-  app.listen(port, '0.0.0.0', () => {
+  app.listen(port, '0.0.0.0', async () => {
     console.log(`Server is running on port ${port}`);
+    console.log(`Monitoring dashboard available at http://localhost:${port}/monitor/`);
   });
 }
 

@@ -1,11 +1,31 @@
 const request = require('supertest');
-const app = require('../index');
 const fs = require('fs');
 const path = require('path');
+const db = require('../db/index');
+
+// Ensure test environment before requiring app
+process.env.NODE_ENV = 'test';
+const { resetDatabase } = require('../db/setup');
+const app = require('../index');
 const dbPath = path.join(__dirname, '..', 'data', 'db.json');
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Reset file-based mock DB
   fs.writeFileSync(dbPath, JSON.stringify({ proposals: [] }, null, 2));
+  // Reset SQL database (if used by app)
+  if (resetDatabase) {
+    await resetDatabase();
+  }
+});
+
+afterAll(async () => {
+  // Attempt to close DB connections if possible
+  if (global.db && global.db.destroy) {
+    await global.db.destroy();
+  }
+  if (db && db.destroy) {
+    await db.destroy();
+  }
 });
 
 describe('GET /', () => {

@@ -5,7 +5,14 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "jest --coverage"
+    "test": "jest --coverage",
+    "test:db": "jest db.test.js postgres-config.test.js db-setup.test.js",
+    "test:monitor": "jest monitor-routes.test.js",
+    "test:docker": "jest docker-config.test.js",
+    "db:migrate": "node scripts/db-migration.js",
+    "db:seed": "knex seed:run",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
   },
   "keywords": [],
   "author": "",
@@ -16,11 +23,15 @@
     "handlebars": "^4.7.8",
     "html-pdf-node": "^1.0.8",
     "joi": "^17.13.3",
+    "knex": "^3.1.0",
     "langchain": "^0.3.24",
     "markdown-it": "^13.0.1",
     "openai": "^4.98.0",
+    "pg": "^8.11.3",
+    "sqlite3": "^5.1.7",
     "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^4.6.3"
+    "swagger-ui-express": "^4.6.3",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

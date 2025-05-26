@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proposal Generator - Message Monitor</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Custom Styles -->
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding-top: 2rem;
+      background-color: #f8f9fa;
+    }
+    .card {
+      margin-bottom: 1rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .card-header {
+      font-weight: 600;
+      background-color: #f8f9fa;
+    }
+    .timestamp {
+      font-size: 0.8rem;
+      color: #6c757d;
+    }
+    .message-content {
+      white-space: pre-wrap;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .role-user {
+      border-left: 4px solid #0d6efd;
+    }
+    .role-assistant {
+      border-left: 4px solid #198754;
+    }
+    .filter-section {
+      background-color: #fff;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      margin-bottom: 1.5rem;
+    }
+    .page-title {
+      margin-bottom: 1.5rem;
+      color: #343a40;
+    }
+    .badge-section {
+      display: inline-block;
+      margin-right: 0.5rem;
+    }
+    .clickable {
+      cursor: pointer;
+    }
+    #messageThread {
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <h1 class="page-title">Message Monitoring Dashboard</h1>
+    
+    <div class="row">
+      <!-- Left Sidebar: Sessions List -->
+      <div class="col-md-3">
+        <div class="filter-section">
+          <h5>Sessions</h5>
+          <div class="mb-3">
+            <input type="text" id="sessionSearch" class="form-control" placeholder="Search sessions...">
+          </div>
+          <div class="list-group" id="sessionsList">
+            <!-- Sessions will be loaded here -->
+            <div class="text-center py-3">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between mt-3">
+            <button id="prevPage" class="btn btn-sm btn-outline-secondary">Previous</button>
+            <span id="pageInfo">Page 1</span>
+            <button id="nextPage" class="btn btn-sm btn-outline-secondary">Next</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Main Content: Message Thread -->
+      <div class="col-md-9">
+        <div class="filter-section mb-3">
+          <div class="row">
+            <div class="col-md-4">
+              <label for="phaseFilter" class="form-label">Phase</label>
+              <select id="phaseFilter" class="form-select">
+                <option value="">All Phases</option>
+                <!-- Phases will be loaded here -->
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="agentFilter" class="form-label">Agent</label>
+              <select id="agentFilter" class="form-select">
+                <option value="">All Agents</option>
+                <!-- Agents will be loaded here -->
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="roleFilter" class="form-label">Role</label>
+              <select id="roleFilter" class="form-select">
+                <option value="">All Roles</option>
+                <option value="user">User</option>
+                <option value="assistant">Assistant</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        
+        <div id="messageThread">
+          <!-- Session details will appear here -->
+          <div class="text-center py-5">
+            <h4 class="text-muted">Select a session to view messages</h4>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap & jQuery JS -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Marked.js for Markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
+  <!-- App JavaScript -->
+  <script>
+    // Global variables
+    let currentPage = 1;
+    let currentSessionId = null;
+    let sessionsPerPage = 10;
+    
+    // On document ready
+    $(document).ready(function() {
+      // Load initial data
+      loadSessions(currentPage);
+      loadPhases();
+      loadAgents();
+      
+      // Set up event handlers
+      $('#prevPage').click(() => {
+        if (currentPage > 1) {
+          currentPage--;
+          loadSessions(currentPage);
+        }
+      });
+      
+      $('#nextPage').click(() => {
+        currentPage++;
+        loadSessions(currentPage);
+      });
+      
+      // Filter change events
+      $('#phaseFilter, #agentFilter, #roleFilter').change(() => {
+        if (currentSessionId) {
+          loadMessages(currentSessionId);
+        }
+      });
+      
+      // Session search
+      $('#sessionSearch').on('input', function() {
+        const searchTerm = $(this).val().toLowerCase();
+        $('.session-item').each(function() {
+          const text = $(this).text().toLowerCase();
+          $(this).toggle(text.includes(searchTerm));
+        });
+      });
+    });
+    
+    // Load sessions list
+    function loadSessions(page) {
+      $('#sessionsList').html('<div class="text-center py-3"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>');
+      
+      fetch(`/api/monitor/sessions?page=${page}&limit=${sessionsPerPage}`)
+        .then(response => response.json())
+        .then(sessions => {
+          $('#pageInfo').text(`Page ${page}`);
+          
+          if (sessions.length === 0) {
+            $('#sessionsList').html('<div class="text-center py-3">No sessions found</div>');
+            return;
+          }
+          
+          const sessionItems = sessions.map(session => {
+            const date = new Date(session.created_at).toLocaleString();
+            return `
+              <a href="#" class="list-group-item list-group-item-action session-item" data-id="${session.id}">
+                <div class="d-flex w-100 justify-content-between">
+                  <h6 class="mb-1">Proposal ${session.proposal_id}</h6>
+                  <small>${session.status}</small>
+                </div>
+                <small class="timestamp">${date}</small>
+              </a>
+            `;
+          }).join('');
+          
+          $('#sessionsList').html(sessionItems);
+          
+          // Add click handlers to session items
+          $('.session-item').click(function(e) {
+            e.preventDefault();
+            $('.session-item').removeClass('active');
+            $(this).addClass('active');
+            
+            const sessionId = $(this).data('id');
+            currentSessionId = sessionId;
+            loadMessages(sessionId);
+          });
+        })
+        .catch(error => {
+          console.error('Error loading sessions:', error);
+          $('#sessionsList').html('<div class="alert alert-danger">Error loading sessions</div>');
+        });
+    }
+    
+    // Load messages for a session
+    function loadMessages(sessionId) {
+      $('#messageThread').html('<div class="text-center py-3"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>');
+      
+      // Get filter values
+      const phase = $('#phaseFilter').val();
+      const agentName = $('#agentFilter').val();
+      const role = $('#roleFilter').val();
+      
+      // Build URL with filters
+      let url = `/api/monitor/sessions/${sessionId}/messages`;
+      const params = [];
+      if (phase) params.push(`phase=${encodeURIComponent(phase)}`);
+      if (agentName) params.push(`agentName=${encodeURIComponent(agentName)}`);
+      if (role) params.push(`role=${encodeURIComponent(role)}`);
+      if (params.length > 0) {
+        url += '?' + params.join('&');
+      }
+      
+      fetch(url)
+        .then(response => response.json())
+        .then(messages => {
+          if (messages.length === 0) {
+            $('#messageThread').html('<div class="text-center py-3">No messages found</div>');
+            return;
+          }
+          
+          // Get session details
+          fetch(`/api/monitor/sessions/${sessionId}`)
+            .then(response => response.json())
+            .then(session => {
+              const sessionDate = new Date(session.created_at).toLocaleString();
+              
+              // Create message cards
+              const messageCards = messages.map(message => {
+                const date = new Date(message.created_at).toLocaleString();
+                const roleClass = `role-${message.role}`;
+                const content = formatMessageContent(message.content);
+                
+                return `
+                  <div class="card ${roleClass}" id="message-${message.id}">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                      <div>
+                        <span class="badge bg-primary badge-section">${message.phase || 'Unknown'}</span>
+                        <strong>${message.agent_name || message.role}</strong>
+                      </div>
+                      <small class="timestamp">${date}</small>
+                    </div>
+                    <div class="card-body">
+                      <div class="message-content">${content}</div>
+                    </div>
+                    <div class="card-footer">
+                      <small class="text-muted">Response ID: ${message.response_id}</small>
+                    </div>
+                  </div>
+                `;
+              }).join('');
+              
+              // Render session header and messages
+              const sessionHeader = `
+                <div class="card mb-3">
+                  <div class="card-body">
+                    <h5 class="card-title">Proposal ${session.proposal_id}</h5>
+                    <p class="card-text">
+                      <small class="text-muted">Session ID: ${session.id}</small><br>
+                      <small class="text-muted">Created: ${sessionDate}</small><br>
+                      <small class="text-muted">Status: ${session.status}</small>
+                    </p>
+                  </div>
+                </div>
+              `;
+              
+              $('#messageThread').html(sessionHeader + messageCards);
+            })
+            .catch(error => {
+              console.error('Error loading session details:', error);
+              $('#messageThread').html('<div class="alert alert-danger">Error loading session details</div>');
+            });
+        })
+        .catch(error => {
+          console.error('Error loading messages:', error);
+          $('#messageThread').html('<div class="alert alert-danger">Error loading messages</div>');
+        });
+    }
+    
+    // Load phases for filter
+    function loadPhases() {
+      fetch('/api/monitor/phases')
+        .then(response => response.json())
+        .then(phases => {
+          const options = phases.map(phase => 
+            `<option value="${phase}">${phase}</option>`
+          ).join('');
+          
+          $('#phaseFilter').append(options);
+        })
+        .catch(error => {
+          console.error('Error loading phases:', error);
+        });
+    }
+    
+    // Load agents for filter
+    function loadAgents() {
+      fetch('/api/monitor/agents')
+        .then(response => response.json())
+        .then(agents => {
+          const options = agents.map(agent => 
+            `<option value="${agent.name}">${agent.name}</option>`
+          ).join('');
+          
+          $('#agentFilter').append(options);
+        })
+        .catch(error => {
+          console.error('Error loading agents:', error);
+        });
+    }
+    
+    // Format message content with Markdown
+    function formatMessageContent(content) {
+      if (!content) return '<em>No content</em>';
+      
+      try {
+        // Convert markdown to HTML
+        return marked.parse(content);
+      } catch (e) {
+        console.error('Error parsing markdown:', e);
+        return `<pre>${content}</pre>`;
+      }
+    }
+  </script>
+</body>
+</html>

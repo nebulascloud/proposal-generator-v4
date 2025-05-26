@@ -6,6 +6,9 @@ const {
   trackTokenUsage
 } = require('../agents/responsesAgent');
 
+// Set test environment
+process.env.NODE_ENV = 'test';
+
 // Mock the OpenAI client
 jest.mock('openai', () => {
   return {
@@ -71,6 +74,59 @@ jest.mock('fs', () => ({
   createReadStream: jest.fn().mockReturnValue({}),
   existsSync: jest.fn().mockReturnValue(true),
   mkdirSync: jest.fn()
+}));
+
+// Mock database models
+jest.mock('../db/models/session', () => ({
+  getByProposalId: jest.fn().mockResolvedValue({
+    id: 'mock-session-id',
+    proposal_id: 'mock-proposal-id',
+    status: 'active',
+    metadata: { startedAt: new Date().toISOString() }
+  }),
+  create: jest.fn().mockImplementation(async (data) => ({
+    id: 'mock-session-id',
+    ...data,
+    created_at: new Date().toISOString()
+  }))
+}));
+
+jest.mock('../db/models/message', () => ({
+  create: jest.fn().mockImplementation(async (data) => ({
+    id: data.id || 'mock-message-id',
+    ...data,
+    created_at: new Date().toISOString()
+  })),
+  getBySessionId: jest.fn().mockResolvedValue([])
+}));
+
+jest.mock('../db/models/agent', () => ({
+  getOrCreate: jest.fn().mockImplementation(async (name, instructions) => ({
+    id: 'mock-agent-id',
+    name,
+    instructions,
+    created_at: new Date().toISOString()
+  })),
+  getByName: jest.fn().mockResolvedValue(null)
+}));
+
+// Mock JSON context
+jest.mock('../utils/jsonContext', () => ({
+  storeContext: jest.fn().mockResolvedValue('mock-context-id'),
+  getContext: jest.fn().mockResolvedValue({
+    data: { testKey: 'testValue' },
+    metadata: { type: 'test' }
+  }),
+  formatForPrompt: jest.fn().mockReturnValue('Formatted JSON content')
+}));
+
+// Mock the messageContextBuilder
+jest.mock('../utils/messageContextBuilder', () => ({
+  buildMessageContext: jest.fn().mockResolvedValue({
+    context: 'Mocked message context for the conversation',
+    messageCount: 5,
+    tokenEstimate: 250
+  })
 }));
 
 describe('responsesAgent', () => {
@@ -171,5 +227,49 @@ describe('responsesAgent', () => {
     const updatedProgress = getProgress();
     expect(updatedProgress.tokenSummary.phase1.total).toBe(500); // 300 + 200
     expect(updatedProgress.tokenSummary.overall.total).toBe(500);
+  });
+  
+  // Test for buildContextFromMessages function
+  test('buildContextFromMessages returns context string from message history', async () => {
+    // Get the mocked implementation
+    const { buildMessageContext } = require('../utils/messageContextBuilder');
+    const Session = require('../db/models/session');
+    
+    // Set up mock implementation for this test
+    Session.getByProposalId.mockResolvedValue({
+      id: 'mock-session-id',
+      proposal_id: 'test-proposal-123',
+      status: 'active'
+    });
+    
+    // Call the function
+    const context = await require('../agents/responsesAgent').buildContextFromMessages('test-proposal-123');
+    
+    // Verify Session.getByProposalId was called with the right param
+    expect(Session.getByProposalId).toHaveBeenCalledWith('test-proposal-123');
+    
+    // Verify buildMessageContext was called with the session ID
+    expect(buildMessageContext).toHaveBeenCalledWith('mock-session-id', expect.any(Object));
+    
+    // Verify the result
+    expect(context).toBe('Mocked message context for the conversation');
+  });
+  
+  // Test for session not found case
+  test('buildContextFromMessages creates session if missing and returns context string', async () => {
+    const Session = require('../db/models/session');
+    // Mock no session found on first call, then return a session on second call
+    Session.getByProposalId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'mock-session-id',
+        proposal_id: 'non-existent-proposal',
+        status: 'active'
+      });
+    // Call the function
+    const context = await require('../agents/responsesAgent').buildContextFromMessages('non-existent-proposal');
+    // Should create a session and then return the mocked context string
+    expect(Session.getByProposalId).toHaveBeenCalledWith('non-existent-proposal');
+    expect(context).toBe('Mocked message context for the conversation');
   });
 });

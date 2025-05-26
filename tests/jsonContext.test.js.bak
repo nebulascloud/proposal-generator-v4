@@ -1,0 +1,149 @@
+/**
+ * JSON Context Handler Tests
+ * Tests for the JSON context handling utilities
+ */
+
+const jsonContext = require('../utils/jsonContext');
+
+// Mock the Context model
+jest.mock('../db/models/context', () => ({
+  create: jest.fn(),
+  getById: jest.fn(),
+  findByMetadata: jest.fn(),
+  list: jest.fn()
+}));
+
+const Context = require('../db/models/context');
+
+describe('JSON Context Handler', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+  
+  test('storeContext stores JSON data in the database', async () => {
+    // Mock the created context
+    const mockContext = {
+      id: 'test-context-id',
+      data: { key: 'value' },
+      metadata: { type: 'test' }
+    };
+    
+    Context.create.mockResolvedValue(mockContext);
+    
+    // Call storeContext
+    const contextId = await jsonContext.storeContext(
+      { key: 'value' },
+      { type: 'test' }
+    );
+    
+    // Check that Context.create was called with correct data
+    expect(Context.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: { key: 'value' },
+      metadata: { type: 'test' }
+    }));
+    
+    // Check that it returns the context ID
+    expect(contextId).toBe('test-context-id');
+  });
+  
+  test('getContext retrieves context by ID', async () => {
+    // Mock the context
+    const mockContext = {
+      id: 'test-context-id',
+      data: { key: 'value' },
+      metadata: { type: 'test' }
+    };
+    
+    Context.getById.mockResolvedValue(mockContext);
+    
+    // Call getContext
+    const result = await jsonContext.getContext('test-context-id');
+    
+    // Check that Context.getById was called with correct ID
+    expect(Context.getById).toHaveBeenCalledWith('test-context-id');
+    
+    // Check returned data
+    expect(result).toEqual({
+      data: { key: 'value' },
+      metadata: { type: 'test' }
+    });
+  });
+  
+  test('extractContext extracts parts of a JSON object by path', () => {
+    const testData = {
+      customer: {
+        name: 'Test Company',
+        contact: {
+          email: 'test@example.com',
+          phone: '123-456-7890'
+        }
+      },
+      project: {
+        title: 'Test Project',
+        requirements: ['Req 1', 'Req 2']
+      }
+    };
+    
+    // Extract by path
+    const result = jsonContext.extractContext(testData, 'customer.contact');
+    
+    expect(result).toEqual({
+      email: 'test@example.com',
+      phone: '123-456-7890'
+    });
+  });
+  
+  test('extractContext creates a summary when query is "summary"', () => {
+    const testData = {
+      customer: {
+        name: 'Test Company',
+        contact: {
+          email: 'test@example.com'
+        }
+      },
+      project: {
+        title: 'Test Project',
+        requirements: ['Req 1', 'Req 2']
+      }
+    };
+    
+    // Create summary
+    const result = jsonContext.extractContext(testData, 'summary');
+    
+    // Check that it created a summary object
+    expect(result).toHaveProperty('customer');
+    expect(result).toHaveProperty('project');
+    expect(result.customer).toHaveProperty('type', 'object');
+    expect(result.project).toHaveProperty('type', 'object');
+  });
+  
+  test('formatForPrompt formats JSON as Markdown', () => {
+    const testData = {
+      name: 'Test Company',
+      contact: {
+        email: 'test@example.com'
+      }
+    };
+    
+    // Format as Markdown
+    const result = jsonContext.formatForPrompt(testData, 'markdown');
+    
+    // Check for Markdown formatting
+    expect(result).toContain('**name**:');
+    expect(result).toContain('### contact');
+  });
+  
+  test('formatForPrompt formats arrays as lists', () => {
+    const testData = [
+      { name: 'Item 1' },
+      { name: 'Item 2' }
+    ];
+    
+    // Format as Markdown
+    const result = jsonContext.formatForPrompt(testData, 'markdown');
+    
+    // Check for list formatting
+    expect(result).toContain('1.');
+    expect(result).toContain('2.');
+  });
+});

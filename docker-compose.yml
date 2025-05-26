@@ -10,6 +10,28 @@ services:
       - PORT=${PORT:-3000}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-pguser}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-pgpassword}
+      - DB_DATABASE=${POSTGRES_DB:-proposal_generator}
     restart: unless-stopped
     volumes:
       - ./data:/app/data
+    depends_on:
+      - postgres
+      
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-pguser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pgpassword}
+      - POSTGRES_DB=${POSTGRES_DB:-proposal_generator}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
