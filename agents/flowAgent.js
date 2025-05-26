@@ -12,9 +12,10 @@ const { assistantDefinitions } = require('./assistantDefinitions');
 const responsesAgent = require('./responsesAgent');
 const fs = require('fs');
 const path = require('path');
+const Session = require('../db/models/session'); // Added Session model
 
 // Initialize tracking and state
-let currentProposalId = null;
+// let currentProposalId = null; // Will be set inside runFullFlow
 
 /**
  * Helper to log details about AI response for debugging
@@ -366,18 +367,58 @@ function mockCustomerAnswer(question, brief) {
  * @returns {Object} The complete proposal output
  */
 async function runFullFlow({ brief, customerAnswers: initialCustomerAnswers, customerReviewAnswers: initialCustomerReviewAnswers, jobId }) {
+  let sessionId = null; // Declare sessionId for use in try/catch
+  let currentProposalId = `proposal-${Date.now()}`; // Initialize currentProposalId here
+
   try {
     responsesAgent.resetProgress();
-    
-    currentProposalId = `proposal-${Date.now()}`;
     console.log(`[flowAgent] Starting new proposal generation (ID: ${currentProposalId})`);
-    console.log(`[flowAgent] Received initial customerAnswers: ${initialCustomerAnswers}`);
-    console.log(`[flowAgent] Received initial customerReviewAnswers: ${initialCustomerReviewAnswers}`);
+    
+    // Better logging for initialCustomerAnswers
+    if (initialCustomerAnswers === undefined || initialCustomerAnswers === null) {
+      console.log(`[flowAgent] No initial customerAnswers provided - will generate during flow.`);
+    } else if (typeof initialCustomerAnswers !== 'string') {
+      console.warn(`[flowAgent] initialCustomerAnswers is not a string (${typeof initialCustomerAnswers})`);
+      console.log(`[flowAgent] Attempting to convert initialCustomerAnswers to string.`);
+      initialCustomerAnswers = String(initialCustomerAnswers || '');
+    } else {
+      console.log(`[flowAgent] Received initial customerAnswers: ${initialCustomerAnswers.substring(0,100)}${initialCustomerAnswers.length > 100 ? '...' : ''}`);
+      console.log(`[flowAgent] initialCustomerAnswers length: ${initialCustomerAnswers.length} characters`);
+    }
+    
+    // Better logging for initialCustomerReviewAnswers
+    if (initialCustomerReviewAnswers === undefined || initialCustomerReviewAnswers === null) {
+      console.log(`[flowAgent] No initial customerReviewAnswers provided - will generate during flow if needed.`);
+    } else if (typeof initialCustomerReviewAnswers !== 'string') {
+      console.warn(`[flowAgent] initialCustomerReviewAnswers is not a string (${typeof initialCustomerReviewAnswers})`);
+      console.log(`[flowAgent] Attempting to convert initialCustomerReviewAnswers to string.`);
+      initialCustomerReviewAnswers = String(initialCustomerReviewAnswers || '');
+    } else {
+      console.log(`[flowAgent] Received initial customerReviewAnswers: ${initialCustomerReviewAnswers.substring(0,100)}${initialCustomerReviewAnswers.length > 100 ? '...' : ''}`);
+      console.log(`[flowAgent] initialCustomerReviewAnswers length: ${initialCustomerReviewAnswers.length} characters`);
+    }
 
     if (jobId && global.flowJobs && global.flowJobs[jobId]) {
       global.flowJobs[jobId].proposalId = currentProposalId;
       console.log(`[flowAgent] Associated proposal ${currentProposalId} with job ${jobId}`);
     }
+
+    // Create a new session in the database
+    const sessionData = {
+      proposalId: currentProposalId,
+      customerBriefId: brief && brief.id ? brief.id : null, // Assuming brief might have an id
+      status: 'processing',
+      metadata: { 
+        jobId: jobId, // Link to the async job ID from global.flowJobs
+        startTime: new Date().toISOString(),
+        initialBriefSummary: brief ? { client_name: brief.client_name, project_description: brief.project_description } : null,
+        hasInitialCustomerAnswers: !!initialCustomerAnswers,
+        hasInitialCustomerReviewAnswers: !!initialCustomerReviewAnswers
+      }
+    };
+    const newDbSession = await Session.create(sessionData);
+    sessionId = newDbSession.id; // Store the DB session ID
+    console.log(`[flowAgent] Created DB session ${sessionId} for proposal ${currentProposalId}`);
 
     let briefFileId = null;
 
@@ -937,7 +978,7 @@ Please provide thorough answers to help us tailor our proposal to your specific 
 3. What are your primary goals and success metrics?
       
 Please provide thorough answers to help us tailor our proposal to your specific needs.`;
-      
+    
       console.log("[flowAgent] Using fallback customer prompt due to error");
     }
 
@@ -1603,6 +1644,31 @@ A manifest file (${manifestFileId}) is attached listing all revised section file
     addPath(finalApprovalFileId ? `/uploads/${currentProposalId}/${currentProposalId}_final_approval.txt` : null);
     addPath(finalProposalFileId ? `/uploads/${currentProposalId}/${currentProposalId}_final_proposal.md` : null);
 
+    // Update session to 'completed' in the database
+    if (sessionId) {
+      try {
+        const finalReportForCompletion = responsesAgent.getTokenUsageReport();
+        const currentSessionForCompletion = await Session.getById(sessionId);
+        const completionMetadata = {
+          ...(currentSessionForCompletion ? currentSessionForCompletion.metadata : {}),
+          completionTime: new Date().toISOString(),
+          totalTokensUsed: finalReportForCompletion.overallTokens?.total,
+          filesGeneratedCount: allGeneratedFiles.length
+          // Consider adding allGeneratedFiles list if not too large, or a manifest file ID
+        };
+        await Session.update({ 
+          id: sessionId, 
+          status: 'completed', 
+          completedAt: new Date(),
+          metadata: completionMetadata
+        });
+        console.log(`[flowAgent] Updated DB session ${sessionId} to completed`);
+      } catch (dbError) {
+        console.error(`[flowAgent] Failed to update DB session ${sessionId} to completed:`, dbError.message);
+        // Continue to return success to the client, but log this DB error
+      }
+    }
+
     return {
       flowData: {
         proposalId: currentProposalId,
@@ -1667,38 +1733,102 @@ A manifest file (${manifestFileId}) is attached listing all revised section file
     console.error(`[flowAgent] CRITICAL ERROR in runFullFlow (ID: ${currentProposalId}):`, error.message);
     console.error(`[flowAgent] Error stack:`, error.stack);
     
-    const finalReport = responsesAgent.getTokenUsageReport();
+    const finalReport = responsesAgent.getTokenUsageReport(); 
     console.log(`[flowAgent] Token Usage Report on Failure:`, JSON.stringify(finalReport, null, 2));
+    
+    // Update session to 'failed' in the database
+    if (sessionId) {
+      try {
+        const currentSessionForError = await Session.getById(sessionId);
+        const errorMetadata = {
+          ...(currentSessionForError ? currentSessionForError.metadata : {}),
+          error: error.message,
+          stack: error.stack, // Storing stack for detailed debugging from DB if needed
+          failureTime: new Date().toISOString(),
+          totalTokensUsedAtFailure: finalReport.overallTokens?.total
+        };
+        await Session.update({ 
+          id: sessionId, 
+          status: 'failed', 
+          failedAt: new Date(), 
+          metadata: errorMetadata 
+        });
+        console.log(`[flowAgent] Updated DB session ${sessionId} to failed`);
+      } catch (dbError) {
+        console.error(`[flowAgent] CRITICAL: Failed to update DB session ${sessionId} on error:`, dbError.message);
+        // The original error will still be returned to the client
+      }
+    }
     
     const errorGeneratedFiles = [];
     const addErrorPath = (filePath) => { if (filePath) errorGeneratedFiles.push(filePath); };
 
     addErrorPath(briefFileId ? `/uploads/${currentProposalId}/${currentProposalId}_brief.json` : null);
     addErrorPath(analysisFileId ? `/uploads/${currentProposalId}/${currentProposalId}_analysis.md` : null);
+    addErrorPath(assignmentsFileId ? `/uploads/${currentProposalId}/${currentProposalId}_assignments.json` : null);
+    addErrorPath(questionsFileId ? `/uploads/${currentProposalId}/${currentProposalId}_questions.json` : null);
+    if (initialCustomerAnswers) {
+        addErrorPath(answersFileId ? `/uploads/${currentProposalId}/${currentProposalId}_customer_answers_initial.md` : null);
+    } else {
+        addErrorPath(answersFileId ? `/uploads/${currentProposalId}/${currentProposalId}_customer_answers.md` : null);
+    }
+    sections.forEach(section => {
+        const s_ = section.replace(/\s+/g, '_');
+        addErrorPath(sectionFileIds[section] ? `/uploads/${currentProposalId}/${currentProposalId}_${s_}_draft.md` : null);
+        addErrorPath(reviewFileIds[section] ? `/uploads/${currentProposalId}/${currentProposalId}_${s_}_review.json` : null);
+        addErrorPath(revisedSectionFileIds[section] ? `/uploads/${currentProposalId}/${currentProposalId}_${s_}_revised.md` : null);
+    });
+    if (initialCustomerReviewAnswers) {
+        addErrorPath(customerReviewAnswersFileId ? `/uploads/${currentProposalId}/${currentProposalId}_review_customer_answers_initial.md` : null);
+    } else if (customerReviewAnswersFileId) {
+        addErrorPath(customerReviewAnswersFileId ? `/uploads/${currentProposalId}/${currentProposalId}_review_customer_answers.md` : null);
+    }
+    addErrorPath(manifestFileId ? `/uploads/${currentProposalId}/${currentProposalId}_final_review_manifest.txt` : null);
+    addErrorPath(finalApprovalFileId ? `/uploads/${currentProposalId}/${currentProposalId}_final_approval.txt` : null);
+    addErrorPath(finalProposalFileId ? `/uploads/${currentProposalId}/${currentProposalId}_final_proposal.md` : null);
 
-    if (global.flowJobs) {
-      const jobId = Object.keys(global.flowJobs).find(id => 
-        global.flowJobs[id].proposalId === currentProposalId);
-      
-      if (jobId) {
-        global.flowJobs[jobId].status = 'failed';
-        global.flowJobs[jobId].error = {
-          message: error.message,
-          stack: error.stack
+    // Update session to 'failed' in the database
+    if (sessionId) {
+      try {
+        const currentSessionForError = await Session.getById(sessionId);
+        const errorMetadata = {
+          ...(currentSessionForError ? currentSessionForError.metadata : {}),
+          error: error.message,
+          stack: error.stack, // Storing stack for detailed debugging from DB if needed
+          failureTime: new Date().toISOString(),
+          totalTokensUsedAtFailure: finalReport.overallTokens?.total
         };
-        global.flowJobs[jobId].endTime = new Date().toISOString();
+        await Session.update({ 
+          id: sessionId, 
+          status: 'failed', 
+          failedAt: new Date(), 
+          metadata: errorMetadata 
+        });
+        console.log(`[flowAgent] Updated DB session ${sessionId} to failed`);
+      } catch (dbError) {
+        console.error(`[flowAgent] CRITICAL: Failed to update DB session ${sessionId} on error:`, dbError.message);
       }
     }
     
     return {
-      error: true,
-      message: error.message,
-      stack: error.stack,
-      proposalId: currentProposalId,
-      generatedFiles: errorGeneratedFiles,
-      tokenUsage: finalReport.overallTokens?.total || 0
+      flowData: {
+        proposalId: currentProposalId,
+        error: error.message,
+        // Include any other relevant error details here
+      },
+      summary: {
+        status: 'failed',
+        message: 'Flow encountered an error and has been halted.',
+        error: error.message,
+        // Consider including a list of generated files up to the point of failure
+        filesGenerated: errorGeneratedFiles
+      }
     };
   }
 }
 
-module.exports = { runFullFlow };
+module.exports = {
+  runFullFlow,
+  updateFlowJobStatus,
+  mockCustomerAnswer
+};

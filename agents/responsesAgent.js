@@ -146,10 +146,39 @@ function resetProgress() {
  * @returns {Object} Token usage details
  */
 function trackTokenUsage(response, phase, component) {
-  // Extract token usage from response
-  const promptTokens = response.usage.prompt_tokens;
-  const completionTokens = response.usage.completion_tokens;
-  const totalTokens = response.usage.total_tokens;
+  // Default values in case the response structure is unexpected
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  
+  // Check if response and usage exist and have the expected structure
+  try {
+    if (response && response.usage) {
+      promptTokens = response.usage.prompt_tokens || 0;
+      completionTokens = response.usage.completion_tokens || 0;
+      totalTokens = response.usage.total_tokens || 0;
+    } else {
+      console.warn(`[responsesAgent] Warning: Response for ${phase}/${component} missing usage data`);
+      
+      // Try alternate locations for token information
+      if (response && response.metadata && response.metadata.tokenUsage) {
+        promptTokens = response.metadata.tokenUsage.prompt_tokens || 0;
+        completionTokens = response.metadata.tokenUsage.completion_tokens || 0;
+        totalTokens = response.metadata.tokenUsage.total_tokens || 0;
+      } else {
+        // Estimate token usage from response text if available
+        if (response && response.text && typeof response.text === 'string') {
+          // Rough estimate: ~4 chars per token
+          totalTokens = Math.ceil(response.text.length / 4);
+          promptTokens = Math.floor(totalTokens * 0.3); // Arbitrary split
+          completionTokens = totalTokens - promptTokens;
+          console.log(`[responsesAgent] Estimated token usage from text length: ${totalTokens} tokens`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[responsesAgent] Error extracting token usage for ${phase}/${component}:`, error.message);
+  }
   
   // Update component-specific usage
   if (proposalProgress[phase] && proposalProgress[phase][component]) {
