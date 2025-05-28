@@ -87,11 +87,20 @@ jest.mock('../db/models/session', () => ({
     status: 'active',
     metadata: {}
   })),
-  update: jest.fn().mockImplementation(async (id, data) => ({
-    id,
-    ...data,
-    updated_at: new Date().toISOString()
-  })),
+  update: jest.fn().mockImplementation(async (data) => {
+    // Extract id and handle the new object-based update format
+    const { id, status, metadata, completedAt, failedAt } = data;
+    return {
+      id,
+      proposal_id: 'mock-proposal-id',
+      customer_brief_id: 'mock-brief-id',
+      status: status || 'active',
+      completed_at: completedAt,
+      failed_at: failedAt,
+      metadata: metadata || {},
+      updated_at: new Date().toISOString()
+    };
+  }),
   getActiveSession: jest.fn().mockImplementation(async () => null)
 }));
 
@@ -122,12 +131,50 @@ describe('Database Models', () => {
 
     // Test update function
     const updatedData = {
+      id: session.id,  // We now expect an object with id field
       status: 'completed',
       metadata: { testKey: 'updatedValue' }
     };
-    const updatedSession = await Session.update(session.id, updatedData);
+    const updatedSession = await Session.update(updatedData);
     expect(updatedSession).toBeDefined();
     expect(updatedSession.status).toBe('completed');
+  });
+
+  test('Session model - should handle completion and failure timestamps', async () => {
+    // Create test session
+    const sessionId = 'timestamp-test-session';
+    const session = await Session.create({
+      id: sessionId,
+      proposalId: 'test-completion-proposal',
+      status: 'active'
+    });
+
+    // 1. Test completing a session with timestamp
+    const completionDate = new Date();
+    const completedSession = await Session.update({
+      id: sessionId,
+      status: 'completed',
+      completedAt: completionDate,
+      metadata: { finalTokenCount: 1500 }
+    });
+    
+    expect(completedSession.status).toBe('completed');
+    expect(completedSession.completed_at).toEqual(completionDate);
+    expect(completedSession.failed_at).toBeUndefined();
+    expect(completedSession.metadata.finalTokenCount).toBe(1500);
+
+    // 2. Test failing a session with timestamp
+    const failureDate = new Date();
+    const failedSession = await Session.update({
+      id: sessionId,
+      status: 'failed',
+      failedAt: failureDate,
+      metadata: { error: 'Test error message' } 
+    });
+    
+    expect(failedSession.status).toBe('failed');
+    expect(failedSession.failed_at).toEqual(failureDate);
+    expect(failedSession.metadata.error).toBe('Test error message');
   });
 
   test('Agent model - getOrCreate and retrieval functions', async () => {

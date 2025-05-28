@@ -1,21 +1,64 @@
 const request = require('supertest');
 const fs = require('fs');
 const path = require('path');
-const db = require('../db/index');
+
+// Mock database modules
+jest.mock('../db/index', () => ({
+  destroy: jest.fn().mockResolvedValue(true),
+  schema: {
+    hasTable: jest.fn().mockResolvedValue(true)
+  },
+  migrate: {
+    latest: jest.fn().mockResolvedValue([]),
+    rollback: jest.fn().mockResolvedValue([]),
+    currentVersion: jest.fn().mockResolvedValue('test_version')
+  },
+  raw: jest.fn().mockResolvedValue([])
+}));
+
+// Mock database models to avoid actual database operations
+jest.mock('../db/models/session', () => ({
+  create: jest.fn().mockImplementation(async (data) => ({ 
+    id: 'mock-session-id', 
+    ...data, 
+    created_at: new Date().toISOString() 
+  })),
+  update: jest.fn().mockImplementation(async (data) => ({ 
+    ...data, 
+    updated_at: new Date().toISOString() 
+  })),
+  getByProposalId: jest.fn().mockResolvedValue({
+    id: 'mock-session-id',
+    proposal_id: 'test-proposal-id',
+    status: 'active'
+  }),
+  getById: jest.fn().mockResolvedValue({
+    id: 'mock-session-id',
+    proposal_id: 'test-proposal-id',
+    status: 'active'
+  })
+}));
+
+// Mock other database operations
+jest.mock('../db/setup', () => ({
+  initDatabase: jest.fn().mockResolvedValue(true),
+  resetDatabase: jest.fn().mockResolvedValue(true)
+}));
 
 // Ensure test environment before requiring app
 process.env.NODE_ENV = 'test';
-const { resetDatabase } = require('../db/setup');
+const { resetDatabase, initDatabase } = require('../db/setup');
 const app = require('../index');
 const dbPath = path.join(__dirname, '..', 'data', 'db.json');
+
+beforeAll(async () => {
+  // No need to actually reset the database as it's mocked
+  console.log('[Test Setup] Using mocked database');
+})
 
 beforeEach(async () => {
   // Reset file-based mock DB
   fs.writeFileSync(dbPath, JSON.stringify({ proposals: [] }, null, 2));
-  // Reset SQL database (if used by app)
-  if (resetDatabase) {
-    await resetDatabase();
-  }
 });
 
 afterAll(async () => {
@@ -23,9 +66,7 @@ afterAll(async () => {
   if (global.db && global.db.destroy) {
     await global.db.destroy();
   }
-  if (db && db.destroy) {
-    await db.destroy();
-  }
+  // No need to close db connection as it's mocked
 });
 
 describe('GET /', () => {

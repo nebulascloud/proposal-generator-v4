@@ -93,9 +93,22 @@ async function getByProposalId(proposalId, status = null) {
     console.log(`[Session Model] Found session ${session.id} for proposalId=${proposalId}`);
     if (session.metadata) {
       try {
-        session.metadata = JSON.parse(session.metadata);
+        // Check if metadata is already an object
+        if (typeof session.metadata === 'object' && session.metadata !== null) {
+          console.log(`[Session Model] Session ${session.id} metadata (in getByProposalId) is already an object, skipping parsing`);
+        } else if (typeof session.metadata === 'string') {
+          // Ensure string is not empty before parsing
+          if (session.metadata.trim() === '') {
+            session.metadata = {};
+          } else {
+            session.metadata = JSON.parse(session.metadata);
+          }
+        } else {
+          console.warn(`[Session Model] Session ${session.id} (in getByProposalId) has metadata of unexpected type: ${typeof session.metadata}`);
+          session.metadata = {};
+        }
       } catch (e) {
-        console.error(`[Session Model] Error parsing metadata for session ${session.id}:`, e);
+        console.error(`[Session Model] Error parsing metadata for session ${session.id} (in getByProposalId):`, e);
         session.metadata = {}; // Default to empty object on parse error
       }
     }
@@ -118,6 +131,15 @@ async function update(data) {
   
   if (updateFields.status) updateData.status = updateFields.status;
   if (updateFields.metadata) updateData.metadata = JSON.stringify(updateFields.metadata);
+  if (updateFields.completedAt) updateData.completed_at = updateFields.completedAt;
+  if (updateFields.failedAt) updateData.failed_at = updateFields.failedAt;
+  if (updateFields.hasOwnProperty('customer_brief_id')) updateData.customer_brief_id = updateFields.customer_brief_id;
+
+
+  if (Object.keys(updateData).length === 0) {
+    console.warn(`[Session Model] Update called for session ${id} with no fields to update.`);
+    return getById(id); // Or handle as an error/no-op
+  }
   
   await db('sessions').where({ id }).update(updateData);
   return getById(id);
@@ -152,9 +174,22 @@ async function list(options = {}) {
     return sessions.map(session => {
       if (session.metadata) {
         try {
-          session.metadata = JSON.parse(session.metadata);
+          // Check if metadata is already an object
+          if (typeof session.metadata === 'object' && session.metadata !== null) {
+            console.log(`[Session Model] Session ${session.id} metadata (in list) is already an object, skipping parsing`);
+          } else if (typeof session.metadata === 'string') {
+            // Ensure string is not empty before parsing
+            if (session.metadata.trim() === '') {
+              session.metadata = {};
+            } else {
+              session.metadata = JSON.parse(session.metadata);
+            }
+          } else {
+            console.warn(`[Session Model] Session ${session.id} (in list) has metadata of unexpected type: ${typeof session.metadata}`);
+            session.metadata = {};
+          }
         } catch (e) {
-          console.error('[Session Model] Error parsing session metadata:', e);
+          console.error(`[Session Model] Error parsing session metadata (in list) for session ${session.id}:`, e);
           session.metadata = {}; // Default to empty object on parse error
         }
       }

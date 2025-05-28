@@ -189,6 +189,7 @@ describe('responsesAgent', () => {
     expect(progress.phase1.briefAnalysis.fileId).toBeNull();
   });
   
+  // Test for trackTokenUsage should properly update token usage statistics
   test('trackTokenUsage should properly update token usage statistics', () => {
     const mockResponse = {
       usage: {
@@ -227,6 +228,91 @@ describe('responsesAgent', () => {
     const updatedProgress = getProgress();
     expect(updatedProgress.tokenSummary.phase1.total).toBe(500); // 300 + 200
     expect(updatedProgress.tokenSummary.overall.total).toBe(500);
+  });
+  
+  // Test for trackTokenUsage handling undefined usage data
+  test('trackTokenUsage should handle undefined usage data', () => {
+    resetProgress();
+    
+    // Case 1: Missing usage property entirely
+    const mockResponseNoUsage = {};
+    trackTokenUsage(mockResponseNoUsage, 'phase1', 'briefAnalysis');
+    
+    // Should set default values of 0
+    const progressCase1 = getProgress();
+    expect(progressCase1.phase1.briefAnalysis.tokenUsage.prompt).toBe(0);
+    expect(progressCase1.phase1.briefAnalysis.tokenUsage.completion).toBe(0);
+    expect(progressCase1.phase1.briefAnalysis.tokenUsage.total).toBe(0);
+    
+    resetProgress();
+    
+    // Case 2: Usage property with missing token counts
+    const mockResponsePartialUsage = {
+      usage: {}
+    };
+    trackTokenUsage(mockResponsePartialUsage, 'phase2', 'customerAnswers');
+    
+    // Should set default values of 0
+    const progressCase2 = getProgress();
+    expect(progressCase2.phase2.customerAnswers.tokenUsage.prompt).toBe(0);
+    expect(progressCase2.phase2.customerAnswers.tokenUsage.total).toBe(0);
+    
+    resetProgress();
+    
+    // Case 3: Response with text property for estimation
+    const mockResponseWithText = {
+      text: 'This is a sample text that should have token usage estimated. The length of this text will be used to estimate tokens.'
+    };
+    trackTokenUsage(mockResponseWithText, 'phase1', 'briefAnalysis');
+    
+    // Should estimate tokens from text length
+    const progressCase3 = getProgress();
+    expect(progressCase3.phase1.briefAnalysis.tokenUsage.total).toBeGreaterThan(0);
+    expect(progressCase3.tokenSummary.phase1.total).toBeGreaterThan(0);
+    
+    resetProgress();
+    
+    // Case 4: Usage in metadata rather than directly on response
+    const mockResponseWithMetadata = {
+      metadata: {
+        tokenUsage: {
+          prompt_tokens: 50,
+          completion_tokens: 25,
+          total_tokens: 75
+        }
+      }
+    };
+    trackTokenUsage(mockResponseWithMetadata, 'phase1', 'briefAnalysis');
+    
+    // Should find and use token data from metadata
+    const progressCase4 = getProgress();
+    expect(progressCase4.phase1.briefAnalysis.tokenUsage.prompt).toBe(50);
+    expect(progressCase4.phase1.briefAnalysis.tokenUsage.completion).toBe(25);
+    expect(progressCase4.phase1.briefAnalysis.tokenUsage.total).toBe(75);
+    
+    resetProgress();
+    
+    // Case 5: Response is null or undefined
+    trackTokenUsage(null, 'phase2', 'sectionDrafts');
+    
+    // Should handle gracefully with default values
+    const progressCase5 = getProgress();
+    expect(progressCase5.phase2.sectionDrafts.tokenUsage.prompt).toBe(0);
+    expect(progressCase5.phase2.sectionDrafts.tokenUsage.completion).toBe(0);
+    expect(progressCase5.phase2.sectionDrafts.tokenUsage.total).toBe(0);
+    
+    resetProgress();
+    
+    // Case 6: Response content with approximation
+    const mockResponseWithResponse = {
+      response: "This is a fairly lengthy response that should have its tokens estimated based on content length. The trackTokenUsage function should handle this by estimating approximately 4 tokens per word."
+    };
+    trackTokenUsage(mockResponseWithResponse, 'phase3', 'reviews');
+    
+    // Should estimate tokens from response content
+    const progressCase6 = getProgress();
+    expect(progressCase6.phase3.reviews.tokenUsage.total).toBeGreaterThan(0);
+    expect(progressCase6.tokenSummary.phase3.total).toBeGreaterThan(0);
   });
   
   // Test for buildContextFromMessages function

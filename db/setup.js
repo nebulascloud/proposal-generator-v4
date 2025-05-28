@@ -7,12 +7,26 @@ const db = require('./index');
 
 // Silence console logging in test environment to avoid noisy logs after Jest teardown
 if (process.env.NODE_ENV === 'test') {
+  // Keep error logging for debugging database initialization issues
   // eslint-disable-next-line no-global-assign
-  console.log = () => {};
+  console.log = function(msg) {
+    if (msg && msg.includes('Database')) {
+      // Keep database-related logs
+      process.stderr.write(msg + '\n');
+    }
+  };
   // eslint-disable-next-line no-global-assign
-  console.warn = () => {};
+  console.warn = function(msg) {
+    if (msg && msg.includes('Database')) {
+      // Keep database-related warnings
+      process.stderr.write(msg + '\n');
+    }
+  };
   // eslint-disable-next-line no-global-assign
-  console.error = () => {};
+  console.error = function(msg) {
+    // Always show errors
+    process.stderr.write(msg + '\n');
+  };
 }
 
 /**
@@ -87,10 +101,15 @@ async function resetDatabase() {
   try {
     console.log('[Database] Resetting database...');
     
-    // Roll back all migrations
-    await db.migrate.rollback(undefined, true);
+    // Check if tables exist
+    const hasSessionsTable = await db.schema.hasTable('sessions');
     
-    // Run migrations again
+    // If tables exist, roll back all migrations
+    if (hasSessionsTable) {
+      await db.migrate.rollback(undefined, true);
+    }
+    
+    // Run all migrations from scratch
     await db.migrate.latest();
     
     console.log('[Database] Database reset complete');

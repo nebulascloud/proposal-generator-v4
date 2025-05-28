@@ -416,22 +416,16 @@ Return a JSON object mapping each section name to exactly one of these role name
     let assignments;
     
     try {
-      // Try text property first if it's a string
       if (assignResponse.text && typeof assignResponse.text === 'string') {
         console.log(`[flowAgent] Trying to parse text property (string)`);
         responseText = assignResponse.text;
         assignments = parseJson(responseText, "section assignments (text)");
-      } 
-      // Then try response property if it's a string
-      else if (assignResponse.response && typeof assignResponse.response === 'string') {
+      } else if (assignResponse.response && typeof assignResponse.response === 'string') {
         console.log(`[flowAgent] Trying to parse response property (string)`);
         responseText = assignResponse.response;
         assignments = parseJson(responseText, "section assignments (response)");
-      } 
-      // Then try the whole response object as a fallback
-      else {
-        console.log(`[flowAgent] No valid string property found, trying whole response object`);
-        assignments = parseJson(assignResponse, "section assignments (full object)");
+      } else {
+        throw new Error("No valid string property found in assignResponse");
       }
     } catch (error) {
       console.error(`[flowAgent] Error parsing section assignments: ${error.message}`);
