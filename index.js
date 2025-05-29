@@ -9,7 +9,7 @@ const { collaborateProposal } = require('./agents/collaborativeAgent');
 const { createAssistant, getAssistantResponse } = require('./agents/assistantAgent');
 const { assistantDefinitions } = require('./agents/assistantDefinitions');
 const { assignSections, determineDependencies } = require('./agents/orchestratorAgent');
-const { runFullFlow } = require('./agents/flowAgent');
+// const { runFullFlow } = require('./agents/flowAgent'); // [DEPRECATED] Commented out during refactor (see flowAgent-refactoring-plan.md)
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const { defaultTemplate, renderDefault } = require('./templates/defaultTemplate');
@@ -291,7 +291,7 @@ const swaggerOptions = {
       }
     }
   },
-  apis: ['./index.js']
+  apis: ['./index.js', './routes/flowAgentOrchestrator.js']
 };
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
@@ -908,6 +908,10 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Register monitor routes - should be available regardless of how app is started
 app.use('/api/monitor', monitorRoutes);
+
+// Register the new /api/flow/runFullFlow endpoint
+const flowAgentOrchestratorRouter = require('./routes/flowAgentOrchestrator');
+app.use('/api/flow', flowAgentOrchestratorRouter);
 
 if (require.main === module) {
   // Listen on all network interfaces for container connectivity

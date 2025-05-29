@@ -423,5 +423,8 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 
 **IX. Testing & Documentation**
 - [ ] Perform thorough testing after each significant phase/module integration.
+- [ ] Write unit tests for each phase helper in `agents/flowSteps/`
+- [ ] Write unit tests for the orchestrator in `agents/flowAgentOrchestrator.js`
 - [ ] Update any relevant documentation to reflect the refactoring.
 - [ ] Update this checklist as tasks are completed.
+- [ ] Comment out legacy checklist items that are no longer relevant or will not be used in the future state (e.g., legacy orchestrator/agent code, deprecated helper functions, etc.)
