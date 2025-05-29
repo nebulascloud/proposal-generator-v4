@@ -103,23 +103,24 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 ### Phase 1: Brief Processing & Question Generation
 
 1.  **Sub-Phase 1.1: Brief Analysis**
-    - **Function:** `async function analyzeBrief(currentProposalId, sessionId, briefFileId)`
+    - **Function:** `async function analyzeBrief(currentProposalId, sessionId, briefContextId)`
     - **Target File:** `agents/flowSteps/phase1_briefProcessing.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
         - Generate `analysisPrompt`.
         - Call `safeCreateResponse` for brief analysis.
         - Track token usage.
-        - Upload the `analysis` text and get `analysisFileId`.
+        - Log the analysis as a message/context in the database (using the context model), not as a file.
+        - Store the resulting `analysisContextId` (not fileId).
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `briefFileId`
-    - **Outputs:** `{ analysisFileId, analysisResponseId }` (where `analysisResponseId` is `analysisResponse.id` for chaining)
+    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`
+    - **Outputs:** `{ analysisContextId, analysisResponseId }` (where `analysisResponseId` is the AI response id for chaining)
     - **Status:**
-        - [ ] `analyzeBrief` function defined (currently in `flowAgent.js`, will be moved to `agents/flowSteps/phase1_briefProcessing.js`).
+        - [ ] `analyzeBrief` function defined (in its target file: `agents/flowSteps/phase1_briefProcessing.js`).
         - [ ] `runFullFlow` updated to call `analyzeBrief` (orchestration will be updated once `analyzeBrief` is moved and imported).
 
 2.  **Sub-Phase 1.2: Section Assignments**
-    - **Function:** `async function assignProposalSections(currentProposalId, sessionId, briefFileId, analysisFileId, sections, analysisResponseId)`
+    - **Function:** `async function assignProposalSections(currentProposalId, sessionId, briefContextId, analysisContextId, sections, analysisResponseId)`
     - **Target File:** `agents/flowSteps/phase1_briefProcessing.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
@@ -128,16 +129,17 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - Call `safeCreateResponse` for section assignments, chaining from `analysisResponseId`.
         - Parse the `assignments` JSON from the response.
         - Track token usage.
-        - Upload `assignments` and get `assignmentsFileId`.
+        - Log assignments as a context/message in the database (not as a file).
+        - Store the resulting `assignmentsContextId` (not fileId).
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `briefFileId`, `analysisFileId`, `sections`, `analysisResponseId`
-    - **Outputs:** `{ assignments, assignmentsFileId, assignResponseId }`
+    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId`, `sections`, `analysisResponseId`
+    - **Outputs:** `{ assignments, assignmentsContextId, assignResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase1_briefProcessing.js`).
         - [ ] `runFullFlow` updated to call this function.
 
 3.  **Sub-Phase 1.3: Specialist Question Generation**
-    - **Function:** `async function generateSpecialistQuestions(currentProposalId, sessionId, briefFileId, specialistRoles, assignResponseId)`
+    - **Function:** `async function generateSpecialistQuestions(currentProposalId, sessionId, briefContextId, specialistRoles, assignResponseId)`
     - **Target File:** `agents/flowSteps/phase1_questionGeneration.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
@@ -148,16 +150,18 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
             - Parse the specialist agent's JSON response string to extract structured questions (e.g., into a variable like `roleQuestions`).
             - Add `role` to each extracted question.
             - Store these questions in a temporary collection for this role.
+            - Log each set of questions as a context/message in the database (not as a file).
+            - Store the resulting `questionsContextIds` (not fileIds).
         - Aggregate questions from all roles into `allQuestions`.
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `briefFileId`, `analysisFileId` (as context), `specialistRoles`, `assignResponseId` (or last relevant response ID for chaining)
-    - **Outputs:** `{ allQuestions, lastQuestionResponseId }` (where `lastQuestionResponseId` is the ID of one of the question generation responses for chaining into organization)
+    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId` (as context), `specialistRoles`, `assignResponseId`
+    - **Outputs:** `{ allQuestions, questionsContextIds, lastQuestionResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase1_questionGeneration.js`).
         - [ ] `runFullFlow` updated to call this function.
 
 4.  **Sub-Phase 1.4: Question Organization & Deduplication**
-    - **Function:** `async function organizeAllQuestions(currentProposalId, sessionId, briefFileId, analysisFileId, allQuestions, lastQuestionResponseId)`
+    - **Function:** `async function organizeAllQuestions(currentProposalId, sessionId, briefContextId, analysisContextId, allQuestions, lastQuestionResponseId)`
     - **Target File:** `agents/flowSteps/phase1_questionGeneration.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
@@ -166,10 +170,11 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - Parse `organizedQuestions` JSON.
         - Perform sanity checks and ensure expected structure.
         - Track token usage.
-        - Upload `organizedQuestions` and get `questionsFileId`.
+        - Log organized questions as a context/message in the database (not as a file).
+        - Store the resulting `organizedQuestionsContextId` (not fileId).
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `briefFileId`, `analysisFileId`, `allQuestions`, `lastQuestionResponseId`
-    - **Outputs:** `{ organizedQuestions, questionsFileId, organizedQuestionsResponseId }`
+    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId`, `allQuestions`, `lastQuestionResponseId`
+    - **Outputs:** `{ organizedQuestions, organizedQuestionsContextId, organizedQuestionsResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase1_questionGeneration.js`).
         - [ ] `runFullFlow` updated to call this function.
@@ -177,13 +182,13 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 ### Phase 2: Customer Interaction & Drafting
 
 1.  **Sub-Phase 2.1: Customer Q&A**
-    - **Function:** `async function conductCustomerQA(currentProposalId, sessionId, briefFileId, questionsFileId, organizedQuestions, initialCustomerAnswers, organizedQuestionsResponseId)`
+    - **Function:** `async function conductCustomerQA(currentProposalId, sessionId, briefContextId, questionsContextId, organizedQuestions, initialCustomerAnswers, organizedQuestionsResponseId)`
     - **Target File:** `agents/flowSteps/phase2_customerInteraction.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
         - If `initialCustomerAnswers` (answers provided directly to this phase) are available:
-            - Upload them and get `answersFileId`.
-            - Set `customerAnswersResponse = { id: answersFileId }`.
+            - Log them as a context/message in the database (not as a file).
+            - Set `customerAnswersResponse = { id: customerAnswersContextId }`.
             - Store `customerAnswers` (which would be `customerProvidedAnswers`).
         - Else (no answers provided for this phase, so generate them):
             - Generate `customerPrompt` from `organizedQuestions`.
@@ -191,19 +196,19 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
             - Process `qaAgentResponse`:
                 - Set `customerAnswersResponse`.
                 - Store `customerAnswers`.
-                - If `qaAgentResponse.id` exists, set `answersFileId`.
-                - Else, upload `customerAnswers` and set `answersFileId`, then update `customerAnswersResponse.id`.
+                - Log answers as a context/message in the database (not as a file).
+                - Set `customerAnswersContextId`.
         - Ensure `customerAnswersResponse` is an object with an `id`.
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `briefFileId`, `questionsFileId`, `organizedQuestions`, `initialCustomerAnswers` (optional, answers provided at the start of the flow), `organizedQuestionsResponseId`
-    - **Outputs:** `{ customerAnswers, customerAnswersResponse, answersFileId }`
+    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `questionsContextId`, `organizedQuestions`, `initialCustomerAnswers` (optional), `organizedQuestionsResponseId`
+    - **Outputs:** `{ customerAnswers, customerAnswersResponse, customerAnswersContextId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase2_customerInteraction.js`).
         - [ ] `runFullFlow` updated to call this function.
 
 
 2.  **Sub-Phase 2.2: Section Drafting**
-    - **Function:** `async function draftProposalSections(currentProposalId, sessionId, sections, assignments, briefFileId, analysisFileId, questionsFileId, answersFileId)`
+    - **Function:** `async function draftProposalSections(currentProposalId, sessionId, sections, assignments, briefContextId, analysisContextId, questionsContextId, customerAnswersContextId)`
     - **Target File:** `agents/flowSteps/phase2_drafting.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
@@ -211,15 +216,15 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - For each section:
             - Determine the assigned `role` from `assignments`.
             - Create `draftPrompt`.
-            - Define `draftContexts` (including `briefFileId`, `analysisFileId`, `questionsFileId`, `answersFileId`, etc.).
-            - Call `safeCreateResponse` for section drafting, chaining from `answersFileId` (or the last relevant response).
+            - Define `draftContexts` (including `briefContextId`, `analysisContextId`, `questionsContextId`, `customerAnswersContextId`, etc.).
+            - Call `safeCreateResponse` for section drafting, chaining from `customerAnswersContextId` (or the last relevant response).
             - Store `draftContent`.
             - Track token usage.
-            - Upload draft and get `draftFileId`.
-            - Store `draftFileId` in `sectionFileIds` map.
+            - Log draft as a context/message in the database (not as a file).
+            - Store `draftContextIds` in a map.
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `briefFileId`, `analysisFileId`, `questionsFileId`, `answersFileId` (or `customerAnswersResponse.id`)
-    - **Outputs:** `{ sectionFileIds, lastDraftResponseId }`
+    - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `briefContextId`, `analysisContextId`, `questionsContextId`, `customerAnswersContextId`
+    - **Outputs:** `{ draftContextIds, lastDraftResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase2_drafting.js`).
         - [ ] `runFullFlow` updated to call this function.
@@ -227,7 +232,7 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 ### Phase 3: Review & Revision
 
 1.  **Sub-Phase 3.1: Section Review (Internal)**
-    - **Function:** `async function reviewProposalSections(currentProposalId, sessionId, sections, assignments, sectionFileIds, briefFileId, analysisFileId, lastDraftResponseId)`
+    - **Function:** `async function reviewProposalSections(currentProposalId, sessionId, sections, assignments, sectionContexts, briefContextId, analysisContextId, lastDraftContextId)`
     - **Target File:** `agents/flowSteps/phase3_review.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
@@ -235,15 +240,14 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - For each section:
             - Determine `reviewerRole` (e.g., Quality Manager or a different specialist).
             - Create `reviewPrompt`.
-            - Define `reviewContexts` (draft file, brief, analysis, etc.).
-            - Call `safeCreateResponse` for review, chaining from `lastDraftResponseId` or individual draft response IDs.
-            - Store `reviewFeedback`.
+            - Define `reviewContexts` (draft context, brief, analysis, etc. — all referenced by context IDs or direct DB records, not files).
+            - Call `safeCreateResponse` for review, chaining from `lastDraftContextId` or individual draft context IDs.
+            - Store `reviewFeedback` as a message/context in the database (using the context model), including all relevant metadata (jobId, phase, section, reviewer, etc.).
             - Track token usage.
-            - Upload review and get `reviewFileId`.
-            - Store `reviewFileId` in `reviewFileIds` map.
+            - Log review context IDs in a `reviewContextIds` map (not file IDs).
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `sectionFileIds`, `briefFileId`, `analysisFileId`, `lastDraftResponseId`
-    - **Outputs:** `{ reviewFileIds, lastReviewResponseId }`
+    - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `sectionContexts`, `briefContextId`, `analysisContextId`, `lastDraftContextId`
+    - **Outputs:** `{ reviewContextIds, lastReviewContextId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase3_review.js`).
         - [ ] `runFullFlow` updated to call this function.
@@ -264,12 +268,12 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
                 *   Parse the agent's response to get `finalCustomerReviewQuestions`.
                 *   If `finalCustomerReviewQuestions` is empty after deduplication (e.g., all questions were redundant or resolved), proceed as if no questions were found.
         4.  **Conduct Customer Q&A (if `finalCustomerReviewQuestions` exist and are non-empty):**
-            *   Upload `finalCustomerReviewQuestions` to a file and get `customerReviewQuestionsFileId`.
+            *   Log the final set of customer review questions as a context/message in the database (not as a file).
             *   Generate `customerReviewPrompt` using `finalCustomerReviewQuestions`.
             *   Call `safeCreateResponse` (e.g., using a `CustomerInteractionAgent`) to present these questions to the customer and obtain their answers.
             *   Process the agent's response:
                 *   Extract and store `customerReviewAnswers`.
-                *   Upload `customerReviewAnswers` to a file and get `customerReviewAnswersFileId`.
+                *   Log customer review answers as a context/message in the database (not as a file).
                 *   Store `customerReviewResponseId` (from the agent's response, for chaining or logging).
             *   Track token usage for these interactions.
         5.  **Handle No Questions Scenario:**
@@ -304,7 +308,7 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
             - Call `safeCreateResponse` for revision, chaining appropriately.
             - Store `revisedContent`.
             - Track token usage.
-            - Upload revised section and get `revisedFileId`.
+            - Log revised section as a context/message in the database (not as a file).
             - Store in `revisedSectionFileIds` map.
         - Handle errors and update session status.
     - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `sectionFileIds`, `reviewFileIds`, `customerReviewAnswersFileId` (optional), `briefFileId`, `customerReviewResponseIdOrLastInternalReviewId`
@@ -325,28 +329,30 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - Call `safeCreateResponse` for final approval, chaining.
         - Store `approvalDecision`.
         - Track token usage.
-        - Upload approval decision and get `finalApprovalFileId`.
+        - Log approval decision as a context/message in the database (not as a file).
+        - Store in `finalApprovalContextId`.
         - Handle errors and update session status.
     - **Inputs:** `currentProposalId`, `sessionId`, `revisedSectionFileIds` (or `sectionFileIds` if no revision phase), `briefFileId`, `lastRevisionResponseId` (or last relevant ID)
-    - **Outputs:** `{ finalApprovalFileId, finalApprovalResponseId }`
+    - **Outputs:** `{ finalApprovalContextId, finalApprovalResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase4_finalization.js`).
         - [ ] `runFullFlow` updated to call `getFinalApproval`
 
 2.  **Sub-Phase 4.2: Proposal Assembly & Manifest**
-    - **Function:** `async function assembleFinalProposal(currentProposalId, sessionId, revisedSectionFileIdsOrSectionFileIds, briefFileId, finalApprovalFileId)`
+    - **Function:** `async function assembleFinalProposal(currentProposalId, sessionId, revisedSectionFileIdsOrSectionFileIds, briefFileId, finalApprovalContextId)`
     - **Target File:** `agents/flowSteps/phase4_finalization.js`
     - **Responsibility:**
         - Log start of phase and update job/session status.
         - Create `assemblyPrompt` for the final proposal.
         - Define `assemblyContexts` (all final section files, brief, approval).
-        - Call `safeCreateResponse` for proposal assembly, chaining from `finalApprovalFileId`.
+        - Call `safeCreateResponse` for proposal assembly, chaining from `finalApprovalContextId`.
         - Store `finalProposalContent`.
         - Track token usage.
-        - Upload final proposal and get `finalProposalFileId`.
+        - Log final proposal as a context/message in the database (not as a file).
+        - Store in `finalProposalContextId`.
         - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `revisedSectionFileIds` (or `sectionFileIds`), `briefFileId`, `finalApprovalFileId`
-    - **Outputs:** `{ finalProposalFileId, finalProposalResponseId }`
+    - **Inputs:** `currentProposalId`, `sessionId`, `revisedSectionFileIds` (or `sectionFileIds`), `briefFileId`, `finalApprovalContextId`
+    - **Outputs:** `{ finalProposalContextId, finalProposalResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase4_finalization.js`).
         - [ ] `runFullFlow` updated to call `assembleFinalProposal`
@@ -356,13 +362,13 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 ## Consolidated Refactoring Task List
 
 **I. Setup & Orchestrator Shell:**
-- [ ] Create new directory: `agents/flowSteps/`
-- [ ] Create `agents/flowAgentOrchestrator.js` (this will replace the old `flowAgent.js`)
-- [ ] Create `agents/flowSteps/flowUtilities.js`
+- [x] Create new directory: `agents/flowSteps/`
+- [x] Create `agents/flowAgentOrchestrator.js` (this will replace the old `flowAgent.js`)
+- [x] Create `agents/flowSteps/flowUtilities.js`
 
 **II. Phase 0: Initialization & Setup**
-- [ ] Define and implement `initializeFlow` in `agents/flowSteps/phase0_initializeFlow.js`
-- [ ] Integrate `initializeFlow` call into `flowAgentOrchestrator.js`
+- [x] Define and implement `initializeFlow` in `agents/flowSteps/phase0_initializeFlow.js`
+- [x] Integrate `initializeFlow` call into `flowAgentOrchestrator.js`
 
 **III. Phase 1: Brief Processing & Question Generation**
 - **Sub-Phase 1.1: Brief Analysis**
@@ -428,3 +434,31 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 - [ ] Update any relevant documentation to reflect the refactoring.
 - [ ] Update this checklist as tasks are completed.
 - [ ] Comment out legacy checklist items that are no longer relevant or will not be used in the future state (e.g., legacy orchestrator/agent code, deprecated helper functions, etc.)
+
+**Progress Update (2025-05-29):**
+- [x] Created new directory: `agents/flowSteps/`
+- [x] Created `agents/flowAgentOrchestrator.js` (replacing old `flowAgent.js`)
+- [x] Created `agents/flowSteps/flowUtilities.js`
+- [x] Defined and implemented `initializeFlow` in `agents/flowSteps/phase0_initializeFlow.js` (Phase 0)
+- [x] Integrated `initializeFlow` call into `flowAgentOrchestrator.js`
+- [x] Exposed orchestrator as HTTP endpoint with Swagger docs and validation
+- [x] Refactored Phase 0 to log the brief in the database (contexts table) using the context model, not file upload
+- [x] Updated Phase 0 and orchestrator to require and propagate `jobId` robustly throughout the flow
+- [x] Wrote and updated unit tests for Phase 0, ensuring 100% coverage and correct error handling
+- [x] Confirmed endpoint and jobId propagation work end-to-end
+- [x] Updated documentation and checklist as tasks are completed
+
+**Lessons Learned & Application to Downstream Phases:**
+- **Parameter Passing:** Always destructure and explicitly pass required parameters (e.g., `jobId`) through all orchestrator and phase helper calls to avoid undefined values and ensure traceability.
+- **Database-centric Logging:** Prefer logging all key flow artifacts (e.g., brief, context, answers) in the database rather than file uploads for auditability and easier querying.
+- **Unit Testing:** Update and align all unit tests with new data flow and error messages after each refactor. Mock new dependencies (e.g., context model) as needed.
+- **Error Messages:** Standardize error messages for easier debugging and test maintenance. Update tests to match new error strings.
+- **Swagger & API:** Ensure all new endpoints are documented and validated with Swagger/OpenAPI, and that jobId/status/result endpoints are consistent.
+- **Checklist Discipline:** Mark each completed step in the checklist, and update the rationale/lessons for future phases.
+
+**Next Steps:**
+- Apply the above lessons to all downstream phases (Phase 1 and beyond):
+  - Ensure all new phase helpers and orchestrator logic use explicit parameter passing and robust jobId propagation.
+  - Migrate all file-based artifacts to database-centric storage where possible.
+  - Write/maintain unit tests for each new phase, mocking new models/utilities as needed.
+  - Keep documentation and this checklist up to date as each phase is completed.

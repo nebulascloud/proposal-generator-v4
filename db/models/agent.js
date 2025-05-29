@@ -6,20 +6,31 @@
 const db = require('../index');
 
 /**
+ * Valid Service Provider specialists used in the application
+ * This list should match the one in assistantDefinitions.js
+ */
+const VALID_AGENT_PREFIXES = ['sp_', 'cst_'];
+const INTERNAL_TOOLS = ['SectionAssignments', 'OrganizeQuestions', 'CustomerAnswers', 'QualityManager'];
+
+/**
  * Get agent by name, create if doesn't exist
  * 
  * @param {String} name Agent name
  * @param {String} instructions Agent instructions
  * @returns {Object} Agent record
  */
-async function getOrCreate(name, instructions) {
-  // Ensure proper naming convention for service provider agents
-  // If name doesn't start with 'sp_' or 'cst_', prefix with 'sp_' for internal tools
-  // Exceptions for well-known internal tools that aren't service providers
-  const internalTools = ['BriefAnalysis', 'SectionAssignments', 'OrganizeQuestions', 'CustomerAnswers', 'QualityManager'];
+async function getOrCreate(name, instructions = '') {
+  // Ensure name is valid
+  if (!name || typeof name !== 'string') {
+    throw new Error(`[Agent Model] Invalid agent name: ${name}`);
+  }
+
+  // Basic validation - check that agent names follow our prefix convention
+  const hasValidPrefix = VALID_AGENT_PREFIXES.some(prefix => name.startsWith(prefix));
+  const isInternalTool = INTERNAL_TOOLS.includes(name);
   
-  if (!name.startsWith('sp_') && !name.startsWith('cst_') && !internalTools.includes(name)) {
-    console.warn(`[Agent Model] Agent name '${name}' doesn't follow naming convention. Consider prefixing with 'sp_' or 'cst_'`);
+  if (!hasValidPrefix && !isInternalTool) {
+    console.warn(`[Agent Model] Agent name '${name}' doesn't follow naming convention. Should start with ${VALID_AGENT_PREFIXES.join(' or ')}`);
   }
   
   // Try to get existing agent
@@ -27,17 +38,32 @@ async function getOrCreate(name, instructions) {
   
   // If not found, create it
   if (!agent) {
-    const [id] = await db('agents').insert({
+    // Ensure instructions is a string
+    const safeInstructions = instructions || '';
+    // Robust insert for both array/object return types
+    const insertedArr = await db('agents').insert({
       name,
-      instructions
-    });
-    
-    agent = await db('agents').where({ id }).first();
+      instructions: safeInstructions
+    }, ['id']);
+    let agentId;
+    if (Array.isArray(insertedArr)) {
+      // For PostgreSQL/Knex >=0.95, insertedArr is array of objects with 'id'
+      agentId = insertedArr[0] && insertedArr[0].id ? insertedArr[0].id : insertedArr[0];
+    } else if (insertedArr && insertedArr.id) {
+      // For SQLite/other, insertedArr may be an object
+      agentId = insertedArr.id;
+    } else {
+      agentId = insertedArr;
+    }
+    agent = await db('agents').where({ id: agentId }).first();
   } 
   // If instructions have changed, update them
   else if (instructions && agent.instructions !== instructions) {
-    await db('agents').where({ id: agent.id }).update({ instructions });
-    agent.instructions = instructions;
+    // Ensure instructions is a string
+    const safeInstructions = instructions || '';
+    
+    await db('agents').where({ id: agent.id }).update({ instructions: safeInstructions });
+    agent.instructions = safeInstructions;
   }
   
   return agent;

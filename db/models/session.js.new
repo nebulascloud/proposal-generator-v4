@@ -1,0 +1,125 @@
+/**
+ * Session Model
+ * Represents a proposal generation session
+ */
+
+const db = require('../index');
+const { v4: uuidv4 } = require('uuid');
+
+/**
+ * Create a new session
+ * 
+ * @param {Object} data Session data
+ * @returns {Object} Created session
+ */
+async function create(data) {
+  const id = uuidv4();
+  const session = {
+    id,
+    proposal_id: data.proposalId,
+    customer_brief_id: data.customerBriefId,
+    status: data.status || 'active',
+    metadata: data.metadata ? JSON.stringify(data.metadata) : null
+  };
+  
+  await db('sessions').insert(session);
+  return getById(id);
+}
+
+/**
+ * Get session by ID
+ * 
+ * @param {String} id Session ID
+ * @returns {Object} Session
+ */
+async function getById(id) {
+  const session = await db('sessions').where({ id }).first();
+  if (session && session.metadata) {
+    session.metadata = JSON.parse(session.metadata);
+  }
+  return session;
+}
+
+/**
+ * Get session by proposal ID
+ * 
+ * @param {String} proposalId Proposal ID
+ * @param {String} status Optional status filter (defaults to 'active')
+ * @returns {Object} Session
+ */
+async function getByProposalId(proposalId, status = null) {
+  console.log(`[Session Model] Looking for session with proposalId=${proposalId}, status=${status || 'any'}`);
+  
+  let query = db('sessions').where({ proposal_id: proposalId });
+  
+  // Only filter by status if it's explicitly provided
+  if (status) {
+    query = query.where({ status });
+  }
+  
+  query = query.orderBy('created_at', 'desc');
+  
+  const session = await query.first();
+  
+  if (session) {
+    console.log(`[Session Model] Found session ${session.id} for proposalId=${proposalId}`);
+    if (session.metadata) {
+      session.metadata = JSON.parse(session.metadata);
+    }
+  } else {
+    console.log(`[Session Model] No session found for proposalId=${proposalId} with status=${status || 'any'}`);
+  }
+  
+  return session;
+}
+
+/**
+ * Update session
+ * 
+ * @param {Object} data Updated data with id
+ * @returns {Object} Updated session
+ */
+async function update(data) {
+  const { id, ...updateFields } = data;
+  const updateData = {};
+  
+  if (updateFields.status) updateData.status = updateFields.status;
+  if (updateFields.metadata) updateData.metadata = JSON.stringify(updateFields.metadata);
+  
+  await db('sessions').where({ id }).update(updateData);
+  return getById(id);
+}
+
+/**
+ * List sessions with pagination
+ * 
+ * @param {Object} options Pagination options
+ * @returns {Array} List of sessions
+ */
+async function list(options = {}) {
+  const { page = 1, limit = 20, status } = options;
+  const query = db('sessions')
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .offset((page - 1) * limit);
+  
+  if (status) {
+    query.where({ status });
+  }
+  
+  const sessions = await query;
+  return sessions.map(session => {
+    if (session.metadata) {
+      session.metadata = JSON.parse(session.metadata);
+    }
+    return session;
+  });
+}
+
+module.exports = {
+  create,
+  getById,
+  getByProposalId,
+  update,
+  list
+};

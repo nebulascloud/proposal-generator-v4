@@ -1,7 +1,8 @@
 // agents/flowAgentOrchestrator.js
 
 const { initializeFlow } = require('./flowSteps/phase0_initializeFlow');
-// Future: import other phase helpers as they are implemented
+const { analyzeBrief, assignProposalSections } = require('./flowSteps/phase1_briefProcessing');
+const { generateSpecialistQuestions, organizeAllQuestions } = require('./flowSteps/phase1_questionGeneration');
 
 /**
  * Orchestrates the full proposal generation flow by calling each phase helper in sequence.
@@ -15,21 +16,48 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
   try {
     // --- Phase 0: Initialization & Setup ---
     const initResult = await initializeFlow(brief, customerReviewAnswers, jobId);
-    // Destructure for next phases
-    const { currentProposalId, sessionId, sections, briefFileId } = initResult;
+    const { currentProposalId, sessionId, sections, contextId: briefContextId } = initResult;
 
-    // TODO: Call subsequent phase helpers here, passing along required data
-    // e.g. const { analysisFileId, ... } = await analyzeBrief(...);
+    // --- Phase 1.1: Brief Analysis ---
+    const { analysisContextId, analysisResponseId } = await analyzeBrief(currentProposalId, sessionId, briefContextId, jobId);
 
-    // For now, just return the initialization result
+    // --- Phase 1.2: Section Assignments ---
+    const { assignments, assignmentsContextId, assignResponseId } = await assignProposalSections(
+      currentProposalId, sessionId, briefContextId, analysisContextId, sections, analysisResponseId, jobId
+    );
+
+    // --- Phase 1.3: Specialist Question Generation ---
+    // Determine specialist roles from assignments
+    const specialistRoles = Array.from(new Set(Object.values(assignments)));
+    const { allQuestions, questionsContextIds, lastQuestionResponseId } = await generateSpecialistQuestions(
+      currentProposalId, sessionId, briefContextId, analysisContextId, specialistRoles, assignResponseId, jobId
+    );
+
+    // --- Phase 1.4: Question Organization & Deduplication ---
+    const { organizedQuestions, organizedQuestionsContextId, organizedQuestionsResponseId } = await organizeAllQuestions(
+      currentProposalId, sessionId, briefContextId, analysisContextId, allQuestions, lastQuestionResponseId, jobId
+    );
+
+    // Return all outputs for now (future: continue to next phases)
     return {
       ...initResult,
-      status: 'initialized',
+      analysisContextId,
+      analysisResponseId,
+      assignments,
+      assignmentsContextId,
+      assignResponseId,
+      specialistRoles,
+      allQuestions,
+      questionsContextIds,
+      lastQuestionResponseId,
+      organizedQuestions,
+      organizedQuestionsContextId,
+      organizedQuestionsResponseId,
+      status: 'phase1_complete',
     };
   } catch (err) {
     // Top-level error handling
     console.error('runFullFlow error:', err);
-    // TODO: Update session status to 'error' if needed
     throw err;
   }
 }

@@ -453,7 +453,12 @@ async function createInitialResponse(content, contexts = [], role, phase = null,
           content: messageContent
         }
       ],
-      user: role // Use 'user' instead of 'user_id'
+      user: role, // Use 'user' instead of 'user_id'
+      // Use structured outputs format with mandatory name parameter
+      text: { 
+        format: { 
+          type: "json_object"}
+      }
     };
 
     // Add previous_response_id if provided
