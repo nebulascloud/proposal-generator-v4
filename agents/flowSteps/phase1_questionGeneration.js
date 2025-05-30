@@ -45,14 +45,28 @@ async function generateSpecialistQuestions(currentProposalId, sessionId, briefCo
       assignResponseId
     );
     lastQuestionResponseId = response.id;
-    let roleQuestions;
+    let roleQuestions = [];
     try {
-      roleQuestions = JSON.parse(response.response);
+      const parsedResponse = JSON.parse(response.response);
+      
+      // Handle the actual format returned by agents ({"questions": [...]})
+      if (parsedResponse && parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
+        // Format: {"questions": [array of questions]}
+        roleQuestions = parsedResponse.questions;
+      } else if (Array.isArray(parsedResponse)) {
+        // Direct array format
+        roleQuestions = parsedResponse;
+      } else {
+        console.warn(`Unexpected response format from ${validRole}, no questions array found:`, 
+                    JSON.stringify(parsedResponse).substring(0, 100));
+      }
     } catch (err) {
       throw new Error(`Failed to parse questions JSON for role ${validRole}: ` + err.message);
     }
+    
     // Add role to each question
-    const questionsWithRole = (Array.isArray(roleQuestions) ? roleQuestions : []).map(q => ({ ...q, role: validRole }));
+    const questionsWithRole = roleQuestions.map(q => ({ ...q, role: validRole }));
+    console.log(`Processing ${questionsWithRole.length} questions from ${validRole}`);
     allQuestions.push(...questionsWithRole);
     // Log as context
     const context = await contextModel.create({

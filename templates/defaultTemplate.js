@@ -43,7 +43,7 @@ const defaultTemplate = {
     "Milestones": "Key milestones and deliverables with estimated completion dates.",
     "Client Responsibilities": "Any shared responsibilities or actions required from the client."
   },
-  "Pricing": {
+  "Pricing & Cost Estimation": {
     "Cost Breakdown": "Transparent and detailed breakdown of costs.",
     "Pricing Options": "Different pricing options or packages (if applicable).",
     "Interactive Pricing Table": "Include an interactive pricing table if possible."
