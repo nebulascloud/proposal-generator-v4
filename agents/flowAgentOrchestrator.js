@@ -18,17 +18,18 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
   try {
     // --- Phase 0: Initialization & Setup ---
     const initResult = await initializeFlow(brief, customerReviewAnswers, jobId);
-    const { currentProposalId, sessionId, sections, contextId: briefContextId } = initResult;
+    // sections is no longer returned by initializeFlow
+    const { currentProposalId, sessionId, contextId: briefContextId } = initResult;
 
     // --- Phase 1.1: Brief Analysis ---
     const { analysisContextId, analysisResponseId } = await analyzeBrief(currentProposalId, sessionId, briefContextId, jobId);
 
     // --- Phase 1.2: Section Assignments ---
-    // For section assignment and related logic, use Object.keys(defaultTemplate) as the canonical section list
-    const SECTION_NAMES = Object.keys(defaultTemplate);
+    // SECTION_NAMES and sections parameter are removed as assignProposalSections will get sections directly
+    // const SECTION_NAMES = Object.keys(defaultTemplate); // Removed
 
     const { assignments, assignmentsContextId, assignResponseId } = await assignProposalSections(
-      currentProposalId, sessionId, briefContextId, analysisContextId, sections, analysisResponseId, jobId
+      currentProposalId, sessionId, briefContextId, analysisContextId, /* sections, */ analysisResponseId, jobId // sections parameter removed
     );
 
     // --- Phase 1.3: Specialist Question Generation ---
@@ -60,13 +61,16 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
       
       console.log(`Collected ${result.allQuestions.length} questions from ${agentName}`);
       allQuestions = allQuestions.concat(result.allQuestions);
-      lastQuestionResponseId = result.lastQuestionResponseId;
+      // Correctly update lastQuestionResponseId with the ID from the latest specialist question generation
+      if (result.lastQuestionResponseId) {
+        lastQuestionResponseId = result.lastQuestionResponseId;
+      }
     }
 
     // --- Phase 1.4: Question Organization & Deduplication ---
-    // Pass lastQuestionResponseId as required by organizeAllQuestions
+    // Pass the correct lastQuestionResponseId from the specialist question generation loop
     const { organizedQuestions, organizedQuestionsContextId, organizedQuestionsResponseId } = await organizeAllQuestions(
-      currentProposalId, sessionId, briefContextId, analysisContextId, allQuestions, assignResponseId, jobId
+      currentProposalId, sessionId, briefContextId, analysisContextId, allQuestions, lastQuestionResponseId, jobId // Corrected: use lastQuestionResponseId
     );
 
     // Return all outputs for now (future: continue to next phases)

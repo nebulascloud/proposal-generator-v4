@@ -4,6 +4,7 @@ const responsesAgent = require('../responsesAgent');
 const contextModel = require('../../db/models/context');
 const { PHASE1 } = require('./flowPrompts');
 const { VALID_SPECIALISTS } = require('../assistantDefinitions');
+const { getProposalSections } = require('./flowUtilities');
 
 /**
  * Phase 1.1: Brief Analysis
@@ -57,17 +58,21 @@ async function analyzeBrief(currentProposalId, sessionId, briefContextId, jobId)
  * @param {string} sessionId
  * @param {string} briefContextId
  * @param {string} analysisContextId
- * @param {Array} sections
  * @param {string} analysisResponseId
  * @param {string} jobId
  * @returns {Promise<{assignments: object, assignmentsContextId: string, assignResponseId: string}>}
  */
-async function assignProposalSections(currentProposalId, sessionId, briefContextId, analysisContextId, sections, analysisResponseId, jobId) {
-  if (!currentProposalId || !sessionId || !briefContextId || !analysisContextId || !sections || !analysisResponseId || !jobId) {
+async function assignProposalSections(currentProposalId, sessionId, briefContextId, analysisContextId, analysisResponseId, jobId) {
+  if (!currentProposalId || !sessionId || !briefContextId || !analysisContextId || !analysisResponseId || !jobId) {
     throw new Error('Missing required parameter for assignProposalSections');
   }
+  
+  // Get sections directly using the utility function
+  // This also handles validation for missing/empty sections from the template
+  const currentSections = getProposalSections();
+  
   // Use centralized prompt from flowPrompts.js with formatted sections
-  const sectionsText = sections.map(s => s.name || s).join(', ');
+  const sectionsText = currentSections.map(s => s.name || s).join(', ');
   const assignPrompt = PHASE1.ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS.replace('{sections}', sectionsText);
 
   // Call the AI agent for assignments

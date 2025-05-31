@@ -1,5 +1,7 @@
 // agents/flowSteps/flowUtilities.js
 
+const templateModule = require('../../templates/defaultTemplate'); // Renamed import for clarity
+
 // Placeholder for shared utility functions to be migrated/refined during refactor
 
 /**
@@ -55,9 +57,29 @@ function removeUndefined(obj) {
   return obj === undefined ? undefined : obj;
 }
 
+/**
+ * Retrieves and validates the sections from the default proposal template.
+ * @returns {Array} A deep clone of the proposal sections.
+ * @throws {Error} If sections are missing, invalid, or empty in the default template.
+ */
+function getProposalSections() {
+  // Access the actual template object from the imported module
+  const actualTemplateObject = templateModule.defaultTemplate;
+
+  if (!actualTemplateObject || typeof actualTemplateObject !== 'object' || Object.keys(actualTemplateObject).length === 0) {
+    throw new Error('[getProposalSections] Default proposal template object (templateModule.defaultTemplate) is missing, not an object, or empty. Cannot proceed.');
+  }
+  // Transform the keys of the actualTemplateObject into an array of {name: sectionKey} objects
+  const sectionsArray = Object.keys(actualTemplateObject).map(key => ({ name: key }));
+  
+  // Return a deep clone to prevent accidental modification of the original template structure
+  return deepClone(sectionsArray);
+}
+
 module.exports = {
   parseJson,
   deepClone,
   removeUndefined,
+  getProposalSections,
   // ...add other utilities as needed
 };

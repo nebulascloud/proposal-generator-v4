@@ -2,9 +2,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 const responsesAgent = require('../responsesAgent');
-const defaultTemplate = require('../../templates/defaultTemplate');
 const Session = require('../../db/models/session');
-const path = require('path');
 const contextModel = require('../../db/models/context');
 
 /**
@@ -12,7 +10,7 @@ const contextModel = require('../../db/models/context');
  * @param {Object} brief
  * @param {Object} initialCustomerReviewAnswers
  * @param {string} jobId
- * @returns {Promise<{currentProposalId, sessionId, sections, briefFileId, initialCustomerReviewAnswers}>}
+ * @returns {Promise<{currentProposalId, sessionId, briefFileId, initialCustomerReviewAnswers}>}
  */
 async function initializeFlow(brief, initialCustomerReviewAnswers, jobId) {
   if (!brief) throw new Error('Missing required brief');
@@ -48,8 +46,8 @@ async function initializeFlow(brief, initialCustomerReviewAnswers, jobId) {
     throw new Error('Failed to create session: ' + err.message);
   }
 
-  // Initialize sections from defaultTemplate
-  const sections = defaultTemplate.sections ? JSON.parse(JSON.stringify(defaultTemplate.sections)) : [];
+  // Sections are no longer initialized or returned here
+  // They will be fetched by phase1_briefProcessing.js using a utility function
 
   // Store the brief in the contexts table
   let contextId;
@@ -71,7 +69,6 @@ async function initializeFlow(brief, initialCustomerReviewAnswers, jobId) {
   return {
     currentProposalId,
     sessionId,
-    sections,
     contextId,
     initialCustomerReviewAnswers,
   };

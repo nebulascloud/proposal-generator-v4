@@ -78,18 +78,19 @@ JSON TEMPLATE:
   "Cost Analysis": "${PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER}"
 }`,
 
-  ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS: `Based on the brief and analysis, assign these sections: {sections}.
+  ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS: `Based on the brief and analysis, assign specialist roles to the following proposal sections: {sections}.
 
-IMPORTANT: You must ONLY use the valid specialist roles listed below. Return a valid JSON object mapping each section name to exactly one role name. Format your entire response as proper JSON with no additional text.
+IMPORTANT: You must ONLY use the valid specialist roles listed below. Return a valid JSON object mapping each provided section name to exactly one role name. Ensure your entire response is a single, valid JSON object with no additional text outside of it.
 
 VALID SPECIALIST ROLES:
 ${validSpecialistsString}
 
-JSON TEMPLATE:
+EXAMPLE JSON RESPONSE (using the provided sections):
+If sections were "Executive Summary, Technical Approach, Project Plan", your response should look like:
 {
-  "Introduction": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}",
-  "Business Objectives": "${PROMPT_VALID_SPECIALISTS.SP_BUSINESS_ANALYST}",
-  "Technical Solution": "${PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT}"
+  "Executive Summary": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}",
+  "Technical Approach": "${PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT}",
+  "Project Plan": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}"
 }`,
 
   GENERATE_SPECIALIST_QUESTIONS: `As the {role}, generate 3-5 important strategic clarifying questions for the proposal based on the brief and analysis. 
