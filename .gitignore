@@ -24,3 +24,4 @@ docker-compose.override.yml
 # Editor directories
 .vscode/
 .idea/
+docs/docker-logs-erros-03.md

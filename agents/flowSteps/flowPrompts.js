@@ -94,28 +94,37 @@ JSON TEMPLATE:
 
   GENERATE_SPECIALIST_QUESTIONS: `As the {role}, generate 3-5 important strategic clarifying questions for the proposal based on the brief and analysis. 
 
-IMPORTANT: Format your ENTIRE response as a valid JSON array of question objects as shown in the template below. Each question object must include the fields shown. Your response must be properly formatted JSON with no additional text.
+IMPORTANT: Format your ENTIRE response as a valid JSON object. This object must contain a single key named "questions", and its value must be a JSON array of question objects as shown in the template below. Each question object in the array must include the fields shown. Your response must be properly formatted JSON with no additional text outside the main JSON object.
 
 JSON TEMPLATE:
-[
-  {
-    "question": "What is the primary business objective this proposal should address?",
-    "importance": "high",
-    "rationale": "Understanding the core objective ensures alignment"
-  },
-  {
-    "question": "What is the expected timeline for implementation?",
-    "importance": "medium",
-    "rationale": "Helps with resource planning and deliverables"
-  },
-  {
-    "question": "Are there any regulatory considerations we should be aware of?",
-    "importance": "high",
-    "rationale": "Ensures compliance and reduces risk"
-  }
-]`,
+{
+  "questions": [
+    {
+      "question": "What is the primary business objective this proposal should address?",
+      "importance": "high",
+      "rationale": "Understanding the core objective ensures alignment"
+    },
+    {
+      "question": "What is the expected timeline for implementation?",
+      "importance": "medium",
+      "rationale": "Helps with resource planning and deliverables"
+    },
+    {
+      "question": "Are there any regulatory considerations we should be aware of?",
+      "importance": "high",
+      "rationale": "Ensures compliance and reduces risk"
+    }
+  ]
+}`,
 
-  ORGANIZE_ALL_QUESTIONS: `Organize and deduplicate the following specialist questions for the proposal. 
+  ORGANIZE_ALL_QUESTIONS: `Organize, deduplicate, and merge the following specialist questions for the proposal.
+
+Your task:
+1. Group questions by theme (Financials, Technical, etc.)
+2. MERGE similar questions into a single comprehensive question
+3. When merging questions, combine all sources into an array
+4. Create a clear, well-formulated question that captures all aspects from the original questions
+5. Ensure no important details are lost when merging questions
 
 IMPORTANT: Return a JSON object grouping questions by theme. Your ENTIRE response must be a valid, properly-formatted JSON object with no additional text.
 
@@ -124,22 +133,34 @@ Questions: {allQuestions}
 JSON TEMPLATE:
 {
   "Financials": [
-    { "question": "What is your budget?", "source": "${PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER}", "id": "q1" },
-    { "question": "What is your timeline?", "source": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}", "id": "q2" }
+    { 
+      "question": "What is your budget range and what financial constraints or considerations should we be aware of?", 
+      "sources": ["${PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER}", "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}"],
+      "id": "q1" 
+    },
+    { 
+      "question": "What is your expected timeline for implementation and key financial milestones?", 
+      "sources": ["${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}"], 
+      "id": "q2" 
+    }
   ],
   "Technical": [
-    { "question": "What are your key technical requirements?", "source": "${PROMPT_VALID_SPECIALISTS.SP_TECHNICAL_LEAD}", "id": "q3" }
+    { 
+      "question": "What are your key technical requirements, including integration needs and performance expectations?", 
+      "sources": ["${PROMPT_VALID_SPECIALISTS.SP_TECHNICAL_LEAD}", "${PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT}"], 
+      "id": "q3" 
+    }
   ]
 }`,
 
   // Example JSON template for organized/deduped questions:
   ORGANIZED_QUESTIONS_TEMPLATE: {
     "Financials": [
-      { "question": "What is your budget?", "source": PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER, "id": "q1" },
-      { "question": "What is your timeline?", "source": PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER, "id": "q2" }
+      { "question": "What is your budget range and financial constraints?", "sources": [PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER, PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER], "id": "q1" },
+      { "question": "What is your implementation timeline and key milestones?", "sources": [PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER], "id": "q2" }
     ],
     "Technical": [
-      { "question": "What are your key technical requirements?", "source": PROMPT_VALID_SPECIALISTS.SP_TECHNICAL_LEAD, "id": "q3" }
+      { "question": "What are your key technical requirements and integration needs?", "sources": [PROMPT_VALID_SPECIALISTS.SP_TECHNICAL_LEAD, PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT], "id": "q3" }
     ]
   }
   // Add more prompts as needed for Phase 1

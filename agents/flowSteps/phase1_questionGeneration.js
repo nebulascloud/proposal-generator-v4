@@ -49,18 +49,23 @@ async function generateSpecialistQuestions(currentProposalId, sessionId, briefCo
     try {
       const parsedResponse = JSON.parse(response.response);
       
-      // Handle the actual format returned by agents ({"questions": [...]})
+      // Expect format: {"questions": [array of questions]}
       if (parsedResponse && parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
-        // Format: {"questions": [array of questions]}
         roleQuestions = parsedResponse.questions;
-      } else if (Array.isArray(parsedResponse)) {
-        // Direct array format
-        roleQuestions = parsedResponse;
       } else {
-        console.warn(`Unexpected response format from ${validRole}, no questions array found:`, 
-                    JSON.stringify(parsedResponse).substring(0, 100));
+        console.warn(`Unexpected response format from ${validRole}, expected {"questions": [...]}, got:`, 
+                    JSON.stringify(parsedResponse).substring(0, 200)); // Increased substring length for better debugging
+        // Attempt to handle direct array as a fallback, though this should be rare with the new prompt
+        if (Array.isArray(parsedResponse)) {
+          console.warn(`Fallback: ${validRole} returned a direct array. Processing as is.`);
+          roleQuestions = parsedResponse;
+        } else {
+          roleQuestions = []; // Ensure roleQuestions is an array to prevent downstream errors
+        }
       }
     } catch (err) {
+      // Log the problematic response string for easier debugging
+      console.error(`Failed to parse questions JSON for role ${validRole}. Response string:`, response.response);
       throw new Error(`Failed to parse questions JSON for role ${validRole}: ` + err.message);
     }
     
