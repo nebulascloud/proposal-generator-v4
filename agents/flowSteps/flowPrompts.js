@@ -120,7 +120,8 @@ Your task:
 2. MERGE similar questions into a single comprehensive question
 3. When merging questions, combine all sources into an array
 4. Create a clear, well-formulated question that captures all aspects from the original questions
-5. Ensure no important details are lost when merging questions
+5. Ensure no important details are lost when merging questions (i.e. Do NOT summarise, lose, or drop any questions)
+6. Your goal is to ensure that the same question is not asked multiple times, but all relevant information is captured in the final merged question.
 
 IMPORTANT: Return a JSON object grouping questions by theme. Your ENTIRE response must be a valid, properly-formatted JSON object with no additional text.
 
