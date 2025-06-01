@@ -3,8 +3,8 @@
 const { initializeFlow } = require('./flowSteps/phase0_initializeFlow');
 const { analyzeBrief, assignProposalSections } = require('./flowSteps/phase1_briefProcessing');
 const { generateSpecialistQuestions, organizeAllQuestions } = require('./flowSteps/phase1_questionGeneration');
-const { defaultTemplate } = require('../templates/defaultTemplate');
-const { VALID_SPECIALISTS } = require('./assistantDefinitions');
+// const { defaultTemplate } = require('../templates/defaultTemplate'); // No longer directly used here for specialist list
+const { getAssignableSpecialists } = require('./assistantDefinitions'); // Import getAssignableSpecialists
 
 /**
  * Orchestrates the full proposal generation flow by calling each phase helper in sequence.
@@ -33,14 +33,13 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
     );
 
     // --- Phase 1.3: Specialist Question Generation ---
-    // Get all specialist agent names starting with 'sp_' (excluding cst_Customer)
-    const specialistAgentNames = Object.values(VALID_SPECIALISTS).filter(
-      name => name.startsWith('sp_')
-    );
+    // Get assignable specialist agent names using the function from assistantDefinitions
+    const specialistAgentNames = getAssignableSpecialists();
 
-    // Determine specialist roles from assignments
-    const specialistRoles = Array.from(new Set(Object.values(assignments)));
-    // When generating specialist questions, use all specialistAgentNames
+    // Determine specialist roles from assignments (this might be redundant or used for a different purpose later)
+    // const specialistRoles = Array.from(new Set(Object.values(assignments))); 
+    // For now, we iterate through specialistAgentNames derived from getAssignableSpecialists for question generation.
+
     let allQuestions = [];
     let lastQuestionResponseId = null;
     
@@ -81,7 +80,6 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
       assignments,
       assignmentsContextId,
       assignResponseId,
-      specialistRoles,
       allQuestions,
       organizedQuestions,
       organizedQuestionsContextId,

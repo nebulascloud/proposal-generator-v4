@@ -2,22 +2,17 @@
 // Centralized prompt templates and instructions for the flow agent system.
 // Grouped and documented by phase/sub-phase for maintainability and clarity.
 
-// Define valid specialists directly in this file to avoid circular dependencies
-// These must match the ones defined in assistantDefinitions.js
-const PROMPT_VALID_SPECIALISTS = {
-  SP_PROJECT_MANAGER: 'sp_Project_Manager',
-  SP_BUSINESS_ANALYST: 'sp_Business_Analyst',
-  SP_SOLUTION_ARCHITECT: 'sp_Solution_Architect', 
-  SP_TECHNICAL_LEAD: 'sp_Technical_Lead',
-  SP_ACCOUNT_MANAGER: 'sp_Account_Manager',
-  SP_QUALITY_MANAGER: 'sp_Quality_Manager',
-  SP_COLLABORATION_ORCHESTRATOR: 'sp_Collaboration_Orchestrator'
-};
+const { getAssignableSpecialistsString, getAssignableSpecialists } = require('../assistantDefinitions');
 
-// Build a string of valid roles for prompts
-const validSpecialistsString = Object.values(PROMPT_VALID_SPECIALISTS)
-  .map(role => `- ${role}`)
-  .join('\n');
+// Get the formatted string of assignable specialist roles for prompts
+const validSpecialistsString = getAssignableSpecialistsString();
+
+// Get a few example assignable specialist roles for prompt templates
+const assignableSpecialists = getAssignableSpecialists();
+const exampleAssignableRole1 = assignableSpecialists.length > 0 ? assignableSpecialists[0] : 'sp_Example_Specialist_1';
+const exampleAssignableRole2 = assignableSpecialists.length > 1 ? assignableSpecialists[1] : 'sp_Example_Specialist_2';
+const exampleAssignableRole3 = assignableSpecialists.length > 2 ? assignableSpecialists[2] : 'sp_Example_Specialist_3';
+
 
 // -------------------
 // Phase 0: Initialization
@@ -69,13 +64,13 @@ IMPORTANT: Return ONLY a valid JSON object mapping each section name to exactly 
 CRITICAL: You must ONLY use the following valid specialist roles:
 ${validSpecialistsString}
 
-JSON TEMPLATE:
+JSON TEMPLATE (example section names and roles):
 {
-  "Introduction": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}",
-  "Business Objectives": "${PROMPT_VALID_SPECIALISTS.SP_BUSINESS_ANALYST}",
-  "Technical Solution": "${PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT}",
-  "Implementation Plan": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}",
-  "Cost Analysis": "${PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER}"
+  "Introduction": "${exampleAssignableRole1}",
+  "Business Objectives": "${exampleAssignableRole2}",
+  "Technical Solution": "${exampleAssignableRole3}",
+  "Implementation Plan": "${exampleAssignableRole1}",
+  "Cost Analysis": "${exampleAssignableRole2}"
 }`,
 
   ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS: `Based on the brief and analysis, assign specialist roles to the following proposal sections: {sections}.
@@ -88,9 +83,9 @@ ${validSpecialistsString}
 EXAMPLE JSON RESPONSE (using the provided sections):
 If sections were "Executive Summary, Technical Approach, Project Plan", your response should look like:
 {
-  "Executive Summary": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}",
-  "Technical Approach": "${PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT}",
-  "Project Plan": "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}"
+  "Executive Summary": "${exampleAssignableRole1}",
+  "Technical Approach": "${exampleAssignableRole2}",
+  "Project Plan": "${exampleAssignableRole1}"
 }`,
 
   GENERATE_SPECIALIST_QUESTIONS: `As the {role}, generate 3-5 important strategic clarifying questions for the proposal based on the brief and analysis. 
@@ -131,24 +126,24 @@ IMPORTANT: Return a JSON object grouping questions by theme. Your ENTIRE respons
 
 Questions: {allQuestions}
 
-JSON TEMPLATE:
+JSON TEMPLATE (example themes, questions, and source roles):
 {
   "Financials": [
     { 
       "question": "What is your budget range and what financial constraints or considerations should we be aware of?", 
-      "sources": ["${PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER}", "${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}"],
+      "sources": ["${exampleAssignableRole1}", "${exampleAssignableRole2}"],
       "id": "q1" 
     },
     { 
       "question": "What is your expected timeline for implementation and key financial milestones?", 
-      "sources": ["${PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER}"], 
+      "sources": ["${exampleAssignableRole1}"], 
       "id": "q2" 
     }
   ],
   "Technical": [
     { 
       "question": "What are your key technical requirements, including integration needs and performance expectations?", 
-      "sources": ["${PROMPT_VALID_SPECIALISTS.SP_TECHNICAL_LEAD}", "${PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT}"], 
+      "sources": ["${exampleAssignableRole3}", "${exampleAssignableRole2}"], 
       "id": "q3" 
     }
   ]
@@ -157,11 +152,11 @@ JSON TEMPLATE:
   // Example JSON template for organized/deduped questions:
   ORGANIZED_QUESTIONS_TEMPLATE: {
     "Financials": [
-      { "question": "What is your budget range and financial constraints?", "sources": [PROMPT_VALID_SPECIALISTS.SP_ACCOUNT_MANAGER, PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER], "id": "q1" },
-      { "question": "What is your implementation timeline and key milestones?", "sources": [PROMPT_VALID_SPECIALISTS.SP_PROJECT_MANAGER], "id": "q2" }
+      { "question": "What is your budget range and financial constraints?", "sources": [exampleAssignableRole1, exampleAssignableRole2], "id": "q1" },
+      { "question": "What is your implementation timeline and key milestones?", "sources": [exampleAssignableRole1], "id": "q2" }
     ],
     "Technical": [
-      { "question": "What are your key technical requirements and integration needs?", "sources": [PROMPT_VALID_SPECIALISTS.SP_TECHNICAL_LEAD, PROMPT_VALID_SPECIALISTS.SP_SOLUTION_ARCHITECT], "id": "q3" }
+      { "question": "What are your key technical requirements and integration needs?", "sources": [exampleAssignableRole3, exampleAssignableRole2], "id": "q3" }
     ]
   }
   // Add more prompts as needed for Phase 1
@@ -180,5 +175,5 @@ module.exports = {
   PHASE0,
   PHASE1,
   PHASE2,
-  validSpecialistsString
+  validSpecialistsString // Export the dynamically generated string from assistantDefinitions
 };
