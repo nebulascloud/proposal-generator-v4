@@ -4,7 +4,7 @@ const responsesAgent = require('../responsesAgent');
 const contextModel = require('../../db/models/context');
 const { PHASE1 } = require('./flowPrompts');
 const { VALID_SPECIALISTS } = require('../assistantDefinitions');
-const { getProposalSections } = require('./flowUtilities');
+const { getProposalSections, updateSessionStatus } = require('./flowUtilities');
 
 /**
  * Phase 1.1: Brief Analysis
@@ -17,38 +17,46 @@ const { getProposalSections } = require('./flowUtilities');
  */
 async function analyzeBrief(currentProposalId, sessionId, briefContextId, jobId) {
   if (!currentProposalId || !sessionId || !briefContextId || !jobId) {
+    // No sessionId available here if it's missing, so can't update status for this specific error.
     throw new Error('Missing required parameter for analyzeBrief');
   }
-  // Use centralized prompt from flowPrompts.js
-  const analysisPrompt = PHASE1.ANALYZE_BRIEF;
+  try {
+    await updateSessionStatus(sessionId, 'phase1.1_analyze_brief_started');
+    // Use centralized prompt from flowPrompts.js
+    const analysisPrompt = PHASE1.ANALYZE_BRIEF;
 
-  // Call the AI agent for analysis
-  const analysisResponse = await responsesAgent.createInitialResponse(
-    analysisPrompt,
-    [briefContextId],
-    VALID_SPECIALISTS.SP_BRIEF_ANALYSIS,
-    'Brief Analysis',
-    currentProposalId
-  );
+    // Call the AI agent for analysis
+    const analysisResponse = await responsesAgent.createInitialResponse(
+      analysisPrompt,
+      [briefContextId],
+      VALID_SPECIALISTS.SP_BRIEF_ANALYSIS,
+      'Brief Analysis',
+      currentProposalId
+    );
 
-  // Log the analysis as a context in the database
-  const analysisContext = await contextModel.create({
-    data: analysisResponse.response,
-    metadata: {
-      jobId,
-      phase: 'analyzeBrief',
-      proposalId: currentProposalId,
-      sessionId,
-      briefContextId,
+    // Log the analysis as a context in the database
+    const analysisContext = await contextModel.create({
+      data: analysisResponse.response,
+      metadata: {
+        jobId,
+        phase: 'analyzeBrief', // This metadata phase can remain as is or be updated too
+        proposalId: currentProposalId,
+        sessionId,
+        briefContextId,
+        analysisResponseId: analysisResponse.id,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    await updateSessionStatus(sessionId, 'phase1.1_analyze_brief_completed');
+    return {
+      analysisContextId: analysisContext.id,
       analysisResponseId: analysisResponse.id,
-      createdAt: new Date().toISOString(),
-    },
-  });
-
-  return {
-    analysisContextId: analysisContext.id,
-    analysisResponseId: analysisResponse.id,
-  };
+    };
+  } catch (err) {
+    await updateSessionStatus(sessionId, 'phase1.1_analyze_brief_failed');
+    throw new Error(`Failed to analyze brief: ${err.message}`);
+  }
 }
 
 /**
@@ -64,55 +72,63 @@ async function analyzeBrief(currentProposalId, sessionId, briefContextId, jobId)
  */
 async function assignProposalSections(currentProposalId, sessionId, briefContextId, analysisContextId, analysisResponseId, jobId) {
   if (!currentProposalId || !sessionId || !briefContextId || !analysisContextId || !analysisResponseId || !jobId) {
+    // No sessionId available here if it's missing, so can't update status for this specific error.
     throw new Error('Missing required parameter for assignProposalSections');
   }
-  
-  // Get sections directly using the utility function
-  // This also handles validation for missing/empty sections from the template
-  const currentSections = getProposalSections();
-  
-  // Use centralized prompt from flowPrompts.js with formatted sections
-  const sectionsText = currentSections.map(s => s.name || s).join(', ');
-  const assignPrompt = PHASE1.ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS.replace('{sections}', sectionsText);
-
-  // Call the AI agent for assignments
-  const assignResponse = await responsesAgent.createInitialResponse(
-    assignPrompt,
-    [briefContextId, analysisContextId],
-    VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
-    'Section Assignments',
-    currentProposalId,
-    analysisResponseId
-  );
-
-  // Parse assignments JSON
-  let assignments;
   try {
-    assignments = JSON.parse(assignResponse.response);
-  } catch (err) {
-    throw new Error('Failed to parse assignments JSON: ' + err.message);
-  }
+    await updateSessionStatus(sessionId, 'phase1.2_assign_proposal_sections_started');
+    // Get sections directly using the utility function
+    // This also handles validation for missing/empty sections from the template
+    const currentSections = getProposalSections();
+    
+    // Use centralized prompt from flowPrompts.js with formatted sections
+    const sectionsText = currentSections.map(s => s.name || s).join(', ');
+    const assignPrompt = PHASE1.ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS.replace('{sections}', sectionsText);
 
-  // Log assignments as a context in the database
-  const assignmentsContext = await contextModel.create({
-    data: JSON.stringify(assignments),
-    metadata: {
-      jobId,
-      phase: 'assignProposalSections',
-      proposalId: currentProposalId,
-      sessionId,
-      briefContextId,
-      analysisContextId,
+    // Call the AI agent for assignments
+    const assignResponse = await responsesAgent.createInitialResponse(
+      assignPrompt,
+      [briefContextId, analysisContextId],
+      VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
+      'Section Assignments',
+      currentProposalId,
+      analysisResponseId
+    );
+
+    // Parse assignments JSON
+    let assignments;
+    try {
+      assignments = JSON.parse(assignResponse.response);
+    } catch (err) {
+      // Specific error for parsing, status update will be handled by the outer catch.
+      throw new Error('Failed to parse assignments JSON: ' + err.message);
+    }
+
+    // Log assignments as a context in the database
+    const assignmentsContext = await contextModel.create({
+      data: JSON.stringify(assignments),
+      metadata: {
+        jobId,
+        phase: 'assignProposalSections', // This metadata phase can remain as is or be updated too
+        proposalId: currentProposalId,
+        sessionId,
+        briefContextId,
+        analysisContextId,
+        assignResponseId: assignResponse.id,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    await updateSessionStatus(sessionId, 'phase1.2_assign_proposal_sections_completed');
+    return {
+      assignments,
+      assignmentsContextId: assignmentsContext.id,
       assignResponseId: assignResponse.id,
-      createdAt: new Date().toISOString(),
-    },
-  });
-
-  return {
-    assignments,
-    assignmentsContextId: assignmentsContext.id,
-    assignResponseId: assignResponse.id,
-  };
+    };
+  } catch (err) {
+    await updateSessionStatus(sessionId, 'phase1.2_assign_proposal_sections_failed');
+    throw new Error(`Failed to assign proposal sections: ${err.message}`);
+  }
 }
 
 module.exports = {

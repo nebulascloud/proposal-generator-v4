@@ -78,6 +78,80 @@ While `responsesAgent.js` is not the primary focus of *this* refactoring initiat
 
 This phased approach allows us to focus on modularizing the flow orchestration logic first, without expanding the scope to include a full refactor of `responsesAgent.js` simultaneously.
 
+## Session Status Management
+
+A new utility function, `updateSessionStatus(sessionId, status)`, will be added to `agents/flowSteps/flowUtilities.js`. This function will be responsible for updating the session\'s status in the database. Each phase and sub-phase helper function will call this utility at its beginning, successful completion, and in case of errors to reflect the statuses outlined in the "Session Status Progression" section.
+
+## Session Status Progression
+
+To provide clear visibility into the progress of a proposal generation job, the session status will be updated at the beginning and end of each phase and sub-phase. The following statuses are proposed:
+
+### Phase 0: Initialization & Setup
+- **`initializeFlow`**
+    - `phase0_initialize_flow_started`
+    - `phase0_initialize_flow_completed`
+
+### Phase 1: Brief Processing & Question Generation
+- **`analyzeBrief` (Sub-Phase 1.1)**
+    - `phase1.1_analyze_brief_started`
+    - `phase1.1_analyze_brief_completed`
+- **`assignProposalSections` (Sub-Phase 1.2)**
+    - `phase1.2_assign_proposal_sections_started`
+    - `phase1.2_assign_proposal_sections_completed`
+- **`generateSpecialistQuestions` (Sub-Phase 1.3)**
+    - `phase1.3_generate_specialist_questions_started`
+    - `phase1.3_generate_specialist_questions_completed`
+- **`organizeAllQuestions` (Sub-Phase 1.4)**
+    - `phase1.4_organize_all_questions_started`
+    - `phase1.4_organize_all_questions_completed`
+
+### Phase 2: Customer Interaction & Drafting
+- **`conductCustomerQA` (Sub-Phase 2.1)**
+    - `phase2.1_conduct_customer_qa_started`
+    - `phase2.1_conduct_customer_qa_completed`
+    - `phase2.1_conduct_customer_qa_skipped` (if no initial answers and no questions to ask)
+- **`draftProposalSections` (Sub-Phase 2.2)**
+    - `phase2.2_draft_proposal_sections_started`
+    - `phase2.2_draft_proposal_sections_completed`
+
+### Phase 3: Review & Revision
+- **`reviewProposalSections` (Sub-Phase 3.1)**
+    - `phase3.1_review_proposal_sections_started`
+    - `phase3.1_review_proposal_sections_completed`
+- **`conductPostInternalReviewCustomerQA` (Sub-Phase 3.2 - Optional)**
+    - `phase3.2_conduct_post_internal_review_customer_qa_started`
+    - `phase3.2_conduct_post_internal_review_customer_qa_completed`
+    - `phase3.2_conduct_post_internal_review_customer_qa_skipped` (if no questions for customer)
+- **`reviseProposalSections` (Sub-Phase 3.3)**
+    - `phase3.3_revise_proposal_sections_started`
+    - `phase3.3_revise_proposal_sections_completed`
+    - `phase3.3_revise_proposal_sections_skipped` (if no revisions needed)
+
+### Phase 4: Finalization & Assembly
+- **`getFinalApproval` (Sub-Phase 4.1)**
+    - `phase4.1_get_final_approval_started`
+    - `phase4.1_get_final_approval_completed`
+    - `phase4.1_get_final_approval_rejected` (if approval is denied, might need specific handling)
+- **`assembleFinalProposal` (Sub-Phase 4.2)**
+    - `phase4.2_assemble_final_proposal_started`
+    - `phase4.2_assemble_final_proposal_completed` (This could also be considered `flow_completed`)
+
+**Error Statuses:**
+In addition to the above, generic error statuses should be considered for each step, using the format `phaseX.Y_action_failed` or `phaseX_action_failed`. For example:
+- `phase0_initialize_flow_failed`
+- `phase1.1_analyze_brief_failed`
+- `phase1.2_assign_proposal_sections_failed`
+- `phase1.3_generate_specialist_questions_failed`
+- `phase1.4_organize_all_questions_failed`
+- `phase2.1_conduct_customer_qa_failed`
+- `phase2.2_draft_proposal_sections_failed`
+- `phase3.1_review_proposal_sections_failed`
+- `phase3.2_conduct_post_internal_review_customer_qa_failed`
+- `phase3.3_revise_proposal_sections_failed`
+- `phase4.1_get_final_approval_failed`
+- `phase4.2_assemble_final_proposal_failed`
+This allows tracking the exact point of failure.
+
 ## Refactoring Steps:
 
 The `runFullFlow` function will be broken down as follows. Each major step in the original function will be extracted into its own helper.
@@ -86,14 +160,18 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 - **Function:** `async function initializeFlow(brief, initialCustomerReviewAnswers, jobId)`
 - **Target File:** `agents/flowSteps/phase0_initializeFlow.js`
 - **Responsibility:**
+    - **Call `updateSessionStatus(sessionId, 'phase0_initialize_flow_started')` (Note: `sessionId` is created within this function, so this call will be right after its creation).**
     - Generate `currentProposalId`.
     - Reset `responsesAgent` progress.
     - Log initial inputs (`initialCustomerReviewAnswers`).
     - Associate `jobId` with `currentProposalId` in `global.flowJobs`.
     - Create and store a new `Session` in the database, obtaining `sessionId`.
     - Initialize `sections` from `defaultTemplate`.
-    - Upload the initial `brief` and get `briefFileId`.
-    - Handle errors during this setup phase and update session status accordingly.
+    - Upload the initial `brief` and get `briefContextId` (assuming briefs are logged as context).
+    - **Call `updateSessionStatus(sessionId, 'phase0_initialize_flow_completed')` before returning.**
+    - Handle errors during this setup phase:
+        - **If `sessionId` is available, call `updateSessionStatus(sessionId, 'phase0_initialize_flow_failed')`.**
+        - Update job status accordingly.
 - **Inputs:** `brief`, `initialCustomerReviewAnswers`, `jobId`
 - **Outputs:** `{ currentProposalId, sessionId, sections, briefFileId, initialCustomerReviewAnswers }` (note: `initialCustomerReviewAnswers` is returned because it might be type-converted).
 - **Status:**
@@ -106,13 +184,17 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function analyzeBrief(currentProposalId, sessionId, briefContextId)`
     - **Target File:** `agents/flowSteps/phase1_briefProcessing.js`
     - **Responsibility:**
-        - Log start of phase and update job/session status.
+        - **Call `updateSessionStatus(sessionId, 'phase1.1_analyze_brief_started')`.**
+        - Log start of phase and update job status.
         - Generate `analysisPrompt`.
-        - Call `safeCreateResponse` for brief analysis.
+        - Call `responsesAgent` for brief analysis.
         - Track token usage.
-        - Log the analysis as a message/context in the database (using the context model), not as a file.
-        - Store the resulting `analysisContextId` (not fileId).
-        - Handle errors and update session status.
+        - Log the analysis as a message/context in the database.
+        - Store the resulting `analysisContextId`.
+        - **Call `updateSessionStatus(sessionId, 'phase1.1_analyze_brief_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase1.1_analyze_brief_failed')`.**
+            - Update session status (legacy, to be removed if redundant with the utility).
     - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`
     - **Outputs:** `{ analysisContextId, analysisResponseId }` (where `analysisResponseId` is the AI response id for chaining)
     - **Status:**
@@ -123,15 +205,19 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function assignProposalSections(currentProposalId, sessionId, briefContextId, analysisContextId, sections, analysisResponseId)`
     - **Target File:** `agents/flowSteps/phase1_briefProcessing.js`
     - **Responsibility:**
-        - Log start of phase and update job/session status.
+        - **Call `updateSessionStatus(sessionId, 'phase1.2_assign_proposal_sections_started')`.**
+        - Log start of phase and update job status.
         - Determine `availableRoles`.
         - Generate `assignPrompt`.
-        - Call `safeCreateResponse` for section assignments, chaining from `analysisResponseId`.
+        - Call `responsesAgent` for section assignments, chaining from `analysisResponseId`.
         - Parse the `assignments` JSON from the response.
         - Track token usage.
-        - Log assignments as a context/message in the database (not as a file).
-        - Store the resulting `assignmentsContextId` (not fileId).
-        - Handle errors and update session status.
+        - Log assignments as a context/message in the database.
+        - Store the resulting `assignmentsContextId`.
+        - **Call `updateSessionStatus(sessionId, 'phase1.2_assign_proposal_sections_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase1.2_assign_proposal_sections_failed')`.**
+            - Update session status (legacy, to be removed if redundant with the utility).
     - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId`, `sections`, `analysisResponseId`
     - **Outputs:** `{ assignments, assignmentsContextId, assignResponseId }`
     - **Status:**
@@ -139,22 +225,25 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - [ ] `runFullFlow` updated to call this function.
 
 3.  **Sub-Phase 1.3: Specialist Question Generation**
-    - **Function:** `async function generateSpecialistQuestions(currentProposalId, sessionId, briefContextId, specialistRoles, assignResponseId)`
+    - **Function:** `async function generateSpecialistQuestions(currentProposalId, sessionId, briefContextId, analysisContextId, specialistRoles, assignResponseId)`
     - **Target File:** `agents/flowSteps/phase1_questionGeneration.js`
     - **Responsibility:**
-        - Log start of phase and update job/session status.
-        - Iterate through `specialistRoles` to generate questions in parallel.
+        - **Call `updateSessionStatus(sessionId, 'phase1.3_generate_specialist_questions_started')`.**
+        - Log start of phase and update job status.
+        - Iterate through `specialistRoles` to generate questions.
         - For each role:
             - Create `questionPrompt`.
-            - Call `safeCreateResponse` (potentially chaining if a global `lastQuestionResponseId` is maintained or passed iteratively).
-            - Parse the specialist agent's JSON response string to extract structured questions (e.g., into a variable like `roleQuestions`).
-            - Add `role` to each extracted question.
-            - Store these questions in a temporary collection for this role.
-            - Log each set of questions as a context/message in the database (not as a file).
-            - Store the resulting `questionsContextIds` (not fileIds).
-        - Aggregate questions from all roles into `allQuestions`.
-        - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId` (as context), `specialistRoles`, `assignResponseId`
+            - Call `responsesAgent`.
+            - Parse JSON response to extract questions.
+            - Add `role` to each question.
+            - Log questions as context/message.
+            - Store `questionsContextIds`.
+        - Aggregate questions into `allQuestions`.
+        - **Call `updateSessionStatus(sessionId, 'phase1.3_generate_specialist_questions_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase1.3_generate_specialist_questions_failed')`.**
+            - Update session status (legacy, to be removed if redundant with the utility).
+    - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId`, `specialistRoles`, `assignResponseId`
     - **Outputs:** `{ allQuestions, questionsContextIds, lastQuestionResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase1_questionGeneration.js`).
@@ -164,15 +253,19 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function organizeAllQuestions(currentProposalId, sessionId, briefContextId, analysisContextId, allQuestions, lastQuestionResponseId)`
     - **Target File:** `agents/flowSteps/phase1_questionGeneration.js`
     - **Responsibility:**
-        - Log start of phase and update job/session status.
+        - **Call `updateSessionStatus(sessionId, 'phase1.4_organize_all_questions_started')`.**
+        - Log start of phase and update job status.
         - Generate `dedupePrompt` using `allQuestions`.
-        - Call `safeCreateResponse` for question organization, chaining from `lastQuestionResponseId`.
+        - Call `responsesAgent` for question organization, chaining from `lastQuestionResponseId`.
         - Parse `organizedQuestions` JSON.
-        - Perform sanity checks and ensure expected structure.
+        - Perform sanity checks.
         - Track token usage.
-        - Log organized questions as a context/message in the database (not as a file).
-        - Store the resulting `organizedQuestionsContextId` (not fileId).
-        - Handle errors and update session status.
+        - Log organized questions as a context/message.
+        - Store `organizedQuestionsContextId`.
+        - **Call `updateSessionStatus(sessionId, 'phase1.4_organize_all_questions_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase1.4_organize_all_questions_failed')`.**
+            - Update session status (legacy, to be removed if redundant with the utility).
     - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `analysisContextId`, `allQuestions`, `lastQuestionResponseId`
     - **Outputs:** `{ organizedQuestions, organizedQuestionsContextId, organizedQuestionsResponseId }`
     - **Status:**
@@ -185,7 +278,8 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function conductCustomerQA(currentProposalId, sessionId, briefContextId, questionsContextId, organizedQuestions, initialCustomerAnswers, organizedQuestionsResponseId)`
     - **Target File:** `agents/flowSteps/phase2_customerInteraction.js`
     - **Responsibility:**
-        - Log start of phase and update job/session status.
+        - **Call `updateSessionStatus(sessionId, 'phase2.1_conduct_customer_qa_started')`.**
+        - Log start of phase and update job status.
         - If `initialCustomerAnswers` (answers provided directly to this phase) are available:
             - Log them as a context/message in the database (not as a file).
             - Set `customerAnswersResponse = { id: customerAnswersContextId }`.
@@ -199,7 +293,9 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
                 - Log answers as a context/message in the database (not as a file).
                 - Set `customerAnswersContextId`.
         - Ensure `customerAnswersResponse` is an object with an `id`.
-        - Handle errors and update session status.
+        - **Call `updateSessionStatus(sessionId, 'phase2.1_conduct_customer_qa_completed')` (or `phase2.1_conduct_customer_qa_skipped` if applicable) before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase2.1_conduct_customer_qa_failed')`.**
     - **Inputs:** `currentProposalId`, `sessionId`, `briefContextId`, `questionsContextId`, `organizedQuestions`, `initialCustomerAnswers` (optional), `organizedQuestionsResponseId`
     - **Outputs:** `{ customerAnswers, customerAnswersResponse, customerAnswersContextId }`
     - **Status:**
@@ -211,7 +307,8 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function draftProposalSections(currentProposalId, sessionId, sections, assignments, briefContextId, analysisContextId, questionsContextId, customerAnswersContextId)`
     - **Target File:** `agents/flowSteps/phase2_drafting.js`
     - **Responsibility:**
-        - Log start of phase and update job/session status.
+        - **Call `updateSessionStatus(sessionId, 'phase2.2_draft_proposal_sections_started')`.**
+        - Log start of phase and update job status.
         - Iterate through `sections` to draft each one in parallel (or sequentially if dependencies exist).
         - For each section:
             - Determine the assigned `role` from `assignments`.
@@ -222,7 +319,9 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
             - Track token usage.
             - Log draft as a context/message in the database (not as a file).
             - Store `draftContextIds` in a map.
-        - Handle errors and update session status.
+        - **Call `updateSessionStatus(sessionId, 'phase2.2_draft_proposal_sections_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase2.2_draft_proposal_sections_failed')`.**
     - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `briefContextId`, `analysisContextId`, `questionsContextId`, `customerAnswersContextId`
     - **Outputs:** `{ draftContextIds, lastDraftResponseId }`
     - **Status:**
@@ -235,6 +334,7 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function reviewProposalSections(currentProposalId, sessionId, sections, assignments, sectionContexts, briefContextId, analysisContextId, lastDraftContextId)`
     - **Target File:** `agents/flowSteps/phase3_review.js`
     - **Responsibility:**
+        - **Call `updateSessionStatus(sessionId, 'phase3.1_review_proposal_sections_started')`.**
         - Log start of phase and update job/session status.
         - Iterate through `sections` for review.
         - For each section:
@@ -245,7 +345,9 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
             - Store `reviewFeedback` as a message/context in the database (using the context model), including all relevant metadata (jobId, phase, section, reviewer, etc.).
             - Track token usage.
             - Log review context IDs in a `reviewContextIds` map (not file IDs).
-        - Handle errors and update session status.
+        - **Call `updateSessionStatus(sessionId, 'phase3.1_review_proposal_sections_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase3.1_review_proposal_sections_failed')`.**
     - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `sectionContexts`, `briefContextId`, `analysisContextId`, `lastDraftContextId`
     - **Outputs:** `{ reviewContextIds, lastReviewContextId }`
     - **Status:**
@@ -256,6 +358,7 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function conductPostInternalReviewCustomerQA(currentProposalId, sessionId, reviewFileIds, sectionFileIds, briefFileId, lastReviewResponseId)`
     - **Target File:** `agents/flowSteps/phase3_review.js`
     - **Responsibility:**
+        - **Call `updateSessionStatus(sessionId, 'phase3.2_conduct_post_internal_review_customer_qa_started')`.**
         1.  Log start of phase and update job/session status.
         2.  **Extract Potential Questions from Internal Reviews:**
             *   Iterate through `reviewFileIds` (and their corresponding feedback content from Sub-Phase 3.1).
@@ -279,7 +382,9 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         5.  **Handle No Questions Scenario:**
             *   If no questions were extracted from internal reviews initially, or if `finalCustomerReviewQuestions` is empty after the consolidation/deduplication step, log this outcome.
             *   In this case, direct customer interaction for Q&A is skipped for this sub-phase. Outputs related to Q&A (e.g., `customerReviewQuestionsFileId`, `customerReviewAnswersFileId`) will be null or not set.
-        6.  Handle errors throughout the process (e.g., during question extraction, agent calls, file uploads) and update session status accordingly.
+        - **Call `updateSessionStatus(sessionId, 'phase3.2_conduct_post_internal_review_customer_qa_completed')` (or `phase3.2_conduct_post_internal_review_customer_qa_skipped` if applicable) before returning.**
+        6.  Handle errors throughout the process (e.g., during question extraction, agent calls, file uploads) and update session status accordingly:
+            - **Call `updateSessionStatus(sessionId, 'phase3.2_conduct_post_internal_review_customer_qa_failed')`.**
     - **Inputs:**
         *   `currentProposalId`, `sessionId` (standard identifiers)
         *   `reviewFileIds` (essential for accessing internal review feedback from Sub-Phase 3.1, which may contain questions for the customer)
@@ -299,6 +404,7 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
     - **Function:** `async function reviseProposalSections(currentProposalId, sessionId, sections, assignments, sectionFileIds, reviewFileIds, customerReviewAnswersFileId, briefFileId, customerReviewResponseIdOrLastInternalReviewId)`
     - **Target File:** `agents/flowSteps/phase3_revision.js`
     - **Responsibility:**
+        - **Call `updateSessionStatus(sessionId, 'phase3.3_revise_proposal_sections_started')`.**
         - Log start of phase and update job/session status.
         - Iterate through sections needing revision (based on internal and/or customer reviews).
         - For each section:
@@ -310,7 +416,9 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
             - Track token usage.
             - Log revised section as a context/message in the database (not as a file).
             - Store in `revisedSectionFileIds` map.
-        - Handle errors and update session status.
+        - **Call `updateSessionStatus(sessionId, 'phase3.3_revise_proposal_sections_completed')` (or `phase3.3_revise_proposal_sections_skipped` if applicable) before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase3.3_revise_proposal_sections_failed')`.**
     - **Inputs:** `currentProposalId`, `sessionId`, `sections`, `assignments`, `sectionFileIds`, `reviewFileIds`, `customerReviewAnswersFileId` (optional), `briefFileId`, `customerReviewResponseIdOrLastInternalReviewId`
     - **Outputs:** `{ revisedSectionFileIds, lastRevisionResponseId }`
     - **Status:**
@@ -319,10 +427,11 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
 
 ### Phase 4: Finalization & Assembly
 
-1.  **Sub-Phase 4.1: Final Approval**
-    - **Function:** `async function getFinalApproval(currentProposalId, sessionId, revisedSectionFileIdsOrSectionFileIds, briefFileId, lastRevisionResponseId)`
+1.  **Sub-Phase 4.1: Get Final Approval**
+    - **Function:** `async function getFinalApproval(currentProposalId, sessionId, /* other relevant inputs */)`
     - **Target File:** `agents/flowSteps/phase4_finalization.js`
     - **Responsibility:**
+        - **Call `updateSessionStatus(sessionId, 'phase4.1_get_final_approval_started')`.**
         - Log start of phase and update job/session status.
         - Create `approvalPrompt` (e.g., for a "sp_Director" role).
         - Define `approvalContexts` (all final/revised section files).
@@ -331,17 +440,20 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - Track token usage.
         - Log approval decision as a context/message in the database (not as a file).
         - Store in `finalApprovalContextId`.
-        - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `revisedSectionFileIds` (or `sectionFileIds` if no revision phase), `briefFileId`, `lastRevisionResponseId` (or last relevant ID)
+        - **Call `updateSessionStatus(sessionId, 'phase4.1_get_final_approval_completed')` (or `phase4.1_get_final_approval_rejected`) before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase4.1_get_final_approval_failed')`.**
+    - **Inputs:** `currentProposalId`, `sessionId`, `finalProposalContextId` (or similar, representing the content to be approved)
     - **Outputs:** `{ finalApprovalContextId, finalApprovalResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase4_finalization.js`).
         - [ ] `runFullFlow` updated to call `getFinalApproval`
 
-2.  **Sub-Phase 4.2: Proposal Assembly & Manifest**
-    - **Function:** `async function assembleFinalProposal(currentProposalId, sessionId, revisedSectionFileIdsOrSectionFileIds, briefFileId, finalApprovalContextId)`
+2.  **Sub-Phase 4.2: Assemble Final Proposal**
+    - **Function:** `async function assembleFinalProposal(currentProposalId, sessionId, /* other relevant inputs */)`
     - **Target File:** `agents/flowSteps/phase4_finalization.js`
     - **Responsibility:**
+        - **Call `updateSessionStatus(sessionId, 'phase4.2_assemble_final_proposal_started')`.**
         - Log start of phase and update job/session status.
         - Create `assemblyPrompt` for the final proposal.
         - Define `assemblyContexts` (all final section files, brief, approval).
@@ -350,8 +462,10 @@ The `runFullFlow` function will be broken down as follows. Each major step in th
         - Track token usage.
         - Log final proposal as a context/message in the database (not as a file).
         - Store in `finalProposalContextId`.
-        - Handle errors and update session status.
-    - **Inputs:** `currentProposalId`, `sessionId`, `revisedSectionFileIds` (or `sectionFileIds`), `briefFileId`, `finalApprovalContextId`
+        - **Call `updateSessionStatus(sessionId, 'phase4.2_assemble_final_proposal_completed')` before returning.**
+        - Handle errors:
+            - **Call `updateSessionStatus(sessionId, 'phase4.2_assemble_final_proposal_failed')`.**
+    - **Inputs:** `currentProposalId`, `sessionId`, `approvedProposalContexts` (or similar)
     - **Outputs:** `{ finalProposalContextId, finalProposalResponseId }`
     - **Status:**
         - [ ] Function defined (in its target file: `agents/flowSteps/phase4_finalization.js`).

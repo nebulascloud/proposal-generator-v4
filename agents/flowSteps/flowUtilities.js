@@ -76,10 +76,43 @@ function getProposalSections() {
   return deepClone(sectionsArray);
 }
 
+/**
+ * Updates the status of a session in the database.
+ * @param {string} sessionId - The ID of the session to update.
+ * @param {string} status - The new status string.
+ * @returns {Promise<void>}
+ * @throws {Error} If the session is not found or if the database update fails.
+ */
+async function updateSessionStatus(sessionId, status) {
+  const Session = require('../../db/models/session'); // Moved require here to avoid circular dependencies if Session model uses flowUtilities
+  if (!sessionId || !status) {
+    console.error('[updateSessionStatus] Missing sessionId or status.');
+    // Depending on desired strictness, could throw an error here
+    return;
+  }
+
+  try {
+    // Use the existing Session.update method which expects an object
+    const updatedSession = await Session.update({ id: sessionId, status });
+    
+    if (!updatedSession) {
+      // Log an error but don't throw, as the flow might continue or handle this specific case
+      console.error(`[updateSessionStatus] Session not found with ID: ${sessionId} or update failed. Cannot update status to "${status}".`);
+      return;
+    }
+    console.log(`Session ${sessionId} status updated to: ${status}`);
+  } catch (error) {
+    console.error(`[updateSessionStatus] Failed to update session ${sessionId} to status "${status}":`, error);
+    // Re-throw the error to be handled by the calling phase function
+    throw error;
+  }
+}
+
 module.exports = {
   parseJson,
   deepClone,
   removeUndefined,
   getProposalSections,
+  updateSessionStatus, // Export the new utility
   // ...add other utilities as needed
 };
