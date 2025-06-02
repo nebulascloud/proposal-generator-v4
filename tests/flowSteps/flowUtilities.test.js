@@ -1,4 +1,4 @@
-const { parseJson, deepClone, removeUndefined } = require('./flowUtilities');
+const { parseJson, deepClone, removeUndefined } = require('../../agents/flowSteps/flowUtilities');
 
 describe('flowUtilities', () => {
   describe('parseJson', () => {

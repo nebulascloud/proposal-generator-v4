@@ -1,3 +1,12 @@
 {
-  "proposals": []
+  "proposals": [
+    {
+      "id": 1,
+      "title": "HBS Title",
+      "client": "HBS Client",
+      "content": "# Proposal: HBS Title\n\nDear HBS Client,\n\nThis is a draft proposal for **HBS Title** prepared for HBS Client.\n\nBest regards,\nYour Company\n",
+      "createdAt": "2025-06-02T23:11:09.227Z"
+    }
+  ],
+  "orchestrations": []
 }
