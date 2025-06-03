@@ -1,14 +1,5 @@
 const request = require('supertest');
 const app = require('../index');
-const fs = require('fs');
-const path = require('path');
-const { defaultTemplate } = require('../templates/defaultTemplate');
-const dbPath = path.join(__dirname, '..', 'data', 'db.json');
-
-beforeEach(() => {
-  // Reset DB
-  fs.writeFileSync(dbPath, JSON.stringify({ proposals: [], orchestrations: [] }, null, 2));
-});
 
 // Sanity placeholder for Jest to recognize tests
 if (false) describe('Placeholder', () => {
@@ -47,6 +38,7 @@ describe('POST /agents/orchestrate', () => {
   });
 });
 
+// This test is for legacy /proposals endpoint and can be archived.
 describe('GET /agents/orchestrate/:id/status', () => {
   it('should return status and progress for orchestration', async () => {
     const payload = { title: 'O2', client: 'C2', details: 'D2' };

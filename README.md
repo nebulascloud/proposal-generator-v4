@@ -42,9 +42,13 @@ docker-compose up --build  # build and run in Docker
 
 ## Testing
 
+To run the main test suite (excluding legacy/archived tests):
+
 ```bash
-npm test  # runs Jest tests with coverage
+./scripts/test-no-archive.sh
 ```
+
+This script ensures that tests in `tests/archive/` (which may reference obsolete endpoints or legacy file-based DB logic) are not run. Do **not** use `npm test` or `npx jest` directly, as these may run archived tests and recreate legacy files like `data/db.json`.
 
 ## CI/CD
 

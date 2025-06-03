@@ -49,25 +49,9 @@ jest.mock('../db/setup', () => ({
 process.env.NODE_ENV = 'test';
 const { resetDatabase, initDatabase } = require('../db/setup');
 const app = require('../index');
-const dbPath = path.join(__dirname, '..', 'data', 'db.json');
 
-beforeAll(async () => {
-  // No need to actually reset the database as it's mocked
-  console.log('[Test Setup] Using mocked database');
-})
-
-beforeEach(async () => {
-  // Reset file-based mock DB
-  fs.writeFileSync(dbPath, JSON.stringify({ proposals: [] }, null, 2));
-});
-
-afterAll(async () => {
-  // Attempt to close DB connections if possible
-  if (global.db && global.db.destroy) {
-    await global.db.destroy();
-  }
-  // No need to close db connection as it's mocked
-});
+// This test file is now archived. The /proposals endpoint and file-based DB are obsolete in the new Postgres-based flow.
+// See docs/responses-api-migration-plan.md for details.
 
 describe('GET /', () => {
   it('should return Hello, world!', async () => {
@@ -82,51 +66,6 @@ describe('GET /health', () => {
     const res = await request(app).get('/health');
     expect(res.statusCode).toEqual(200);
     expect(res.body).toEqual({ status: 'ok' });
-  });
-});
-
-describe('POST /proposals', () => {
-  it('should return a stub proposal draft', async () => {
-    const payload = { title: 'Test Title', client: 'Test Client' };
-    const res = await request(app).post('/proposals').send(payload);
-    expect(res.statusCode).toEqual(201);
-    expect(res.body).toHaveProperty('title', payload.title);
-    expect(res.body).toHaveProperty('client', payload.client);
-    expect(res.body).toHaveProperty('content');
-  });
-});
-
-describe('POST /proposals validation', () => {
-  it('should return 400 if title is missing', async () => {
-    const res = await request(app).post('/proposals').send({ client: 'Client Only' });
-    expect(res.statusCode).toEqual(400);
-    expect(res.body).toHaveProperty('error');
-  });
-
-  it('should return 400 if client is missing', async () => {
-    const res = await request(app).post('/proposals').send({ title: 'Title Only' });
-    expect(res.statusCode).toEqual(400);
-    expect(res.body).toHaveProperty('error');
-  });
-});
-
-describe('GET /proposals', () => {
-  it('should return empty array initially', async () => {
-    const res = await request(app).get('/proposals');
-    expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual([]);
-  });
-
-  it('should return array with saved proposal after POST', async () => {
-    const payload = { title: 'Saved', client: 'Client A' };
-    await request(app).post('/proposals').send(payload);
-    const res = await request(app).get('/proposals');
-    expect(res.statusCode).toEqual(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBe(1);
-    expect(res.body[0]).toHaveProperty('id', 1);
-    expect(res.body[0]).toHaveProperty('title', payload.title);
-    expect(res.body[0]).toHaveProperty('client', payload.client);
   });
 });
 

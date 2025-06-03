@@ -1,13 +1,5 @@
 const request = require('supertest');
 const app = require('../index');
-const fs = require('fs');
-const path = require('path');
-const dbPath = path.join(__dirname, '..', 'data', 'db.json');
-
-beforeEach(() => {
-  // Reset DB to empty proposals
-  fs.writeFileSync(dbPath, JSON.stringify({ proposals: [] }, null, 2));
-});
 
 describe('POST /agents/collaborate', () => {
   it('should return stub collaborative proposal in test env', async () => {
@@ -26,3 +18,5 @@ describe('POST /agents/collaborate', () => {
     expect(res.body).toHaveProperty('error');
   });
 });
+
+// This test is for legacy /proposals endpoint and can be archived.

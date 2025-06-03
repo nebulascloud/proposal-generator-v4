@@ -33,12 +33,6 @@ console.log(`[responsesAgent] Initialized with model: ${process.env.OPENAI_MODEL
 console.log(`[responsesAgent] API key configured: ${process.env.OPENAI_API_KEY ? 'Yes (hidden)' : 'No'}`);
 console.log(`[responsesAgent] Temperature setting: ${process.env.OPENAI_TEMPERATURE || 'default'}`);
 
-// File storage directory (create if not exists)
-const DATA_DIR = path.join(__dirname, '../data/responses-files');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
 /**
  * Proposal progress tracking state
  */

@@ -1,8 +1,5 @@
 const express = require('express');
 const Joi = require('joi');
-const fs = require('fs');
-const path = require('path');
-const Handlebars = require('handlebars');
 require('dotenv').config();
 const { generateProposal } = require('./agents/proposalAgent');
 const { collaborateProposal } = require('./agents/collaborativeAgent');
@@ -12,8 +9,9 @@ const { assignSections, determineDependencies } = require('./agents/orchestrator
 // const { runFullFlow } = require('./agents/flowAgent'); // [DEPRECATED] Commented out during refactor (see flowAgent-refactoring-plan.md)
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
-const { defaultTemplate, renderDefault } = require('./templates/defaultTemplate');
 const { initDatabase } = require('./db/setup');
+const fs = require('fs');
+const path = require('path');
 
 // Silence console logging in test environment to avoid noisy logs after Jest teardown
 if (process.env.NODE_ENV === 'test') {
@@ -317,109 +315,6 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
-});
-
-// Template directory from environment or default
-const templateDir = process.env.TEMPLATE_DIR || 'templates';
-// Load and compile proposal template
-const templateSrc = fs.readFileSync(path.join(__dirname, templateDir, 'proposal.hbs'), 'utf8');
-const proposalTemplate = Handlebars.compile(templateSrc);
-
-const proposalSchema = Joi.object({
-  title: Joi.string().min(1).required(),
-  client: Joi.string().min(1).required(),
-  useDefaultTemplate: Joi.boolean().optional(),
-  details: Joi.string().optional()
-});
-
-// Database file path
-const dbPath = path.join(__dirname, 'data', 'db.json');
-
-// Load database
-function loadDB() {
-  try {
-    const raw = fs.readFileSync(dbPath, 'utf8');
-    const db = JSON.parse(raw);
-    db.proposals = db.proposals || [];
-    db.orchestrations = db.orchestrations || [];
-    return db;
-  } catch (err) {
-    return { proposals: [], orchestrations: [] };
-  }
-}
-
-// Save database
-function saveDB(db) {
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-}
-
-// Get all proposals
-app.get('/proposals', (req, res) => {
-  const db = loadDB();
-  res.json(db.proposals);
-});
-
-// Render proposal as HTML
-app.get('/proposals/:id/html', (req, res) => {
-  // Stub HTML rendering in tests for speed and avoid DB dependency
-  if (process.env.NODE_ENV === 'test') {
-    const stubHtml = '<h1>Test Proposal</h1>';
-    res.set('Content-Type', 'text/html');
-    return res.send(stubHtml);
-  }
-  const db = loadDB();
-  const proposal = db.proposals.find(p => p.id === parseInt(req.params.id, 10));
-  if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
-  const html = md.render(proposal.content);
-  res.set('Content-Type', 'text/html');
-  res.send(html);
-});
-
-// Render proposal as PDF
-app.get('/proposals/:id/pdf', async (req, res) => {
-  // Stub PDF generation in tests immediately
-  if (process.env.NODE_ENV === 'test') {
-    const stubBuffer = Buffer.from('Test PDF');
-    res.set('Content-Type', 'application/pdf');
-    return res.send(stubBuffer);
-  }
-  const db = loadDB();
-  const proposal = db.proposals.find(p => p.id === parseInt(req.params.id, 10));
-  if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
-  const html = md.render(proposal.content);
-  const file = { content: html };
-  try {
-    const pdfBuffer = await htmlPdf.generatePdf(file, {});
-    res.set('Content-Type', 'application/pdf');
-    res.send(pdfBuffer);
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to generate PDF' });
-  }
-});
-
-app.post('/proposals', (req, res) => {
-  // Allow default template fallback
-  const useDefault = req.body.useDefaultTemplate;
-  const { error, value } = proposalSchema.validate(req.body);
-  if (error) {
-    return res.status(400).json({ error: error.details[0].message });
-  }
-  const { title, client } = value;
-  // Generate proposal content via Handlebars or default renderer
-  let content;
-  if (useDefault) {
-    content = renderDefault({ title, client, details: req.body.details || '' });
-  } else {
-    content = proposalTemplate({ title, client });
-  }
-  // Persist proposal
-  const db = loadDB();
-  const id = db.proposals.length + 1;
-  const createdAt = new Date().toISOString();
-  const draft = { id, title, client, content, createdAt };
-  db.proposals.push(draft);
-  saveDB(db);
-  res.status(201).json(draft);
 });
 
 // Agent input validation schema
