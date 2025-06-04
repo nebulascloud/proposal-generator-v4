@@ -1,14 +1,27 @@
 // tests/flowSteps/phase1_briefProcessing.test.js
 
-jest.mock('../../agents/assistantDefinitions', () => ({
-  getAssignableSpecialists: jest.fn(() => ['sp_Account_Manager', 'sp_Project_Manager']),
-  getAssignableSpecialistsString: jest.fn(() => '- sp_Account_Manager\n- sp_Project_Manager'),
-  VALID_SPECIALISTS: {
-    SP_ACCOUNT_MANAGER: 'sp_Account_Manager',
-    SP_PROJECT_MANAGER: 'sp_Project_Manager',
-    SP_COLLABORATION_ORCHESTRATOR: 'sp_Collaboration_Orchestrator',
-  },
-}));
+jest.mock('../../agents/assistantDefinitions', () => {
+  const realDefs = jest.requireActual('../../agents/assistantDefinitions');
+  return {
+    ...realDefs,
+    getAssignableSpecialists: jest.fn(() => ['sp_Account_Manager', 'sp_Project_Manager']),
+    getAssignableSpecialistsString: jest.fn(() => '- sp_Account_Manager\n- sp_Project_Manager'),
+    VALID_SPECIALISTS: {
+      ...realDefs.VALID_SPECIALISTS,
+      SP_ACCOUNT_MANAGER: 'sp_Account_Manager',
+      SP_PROJECT_MANAGER: 'sp_Project_Manager',
+      SP_COLLABORATION_ORCHESTRATOR: 'sp_Collaboration_Orchestrator',
+      SP_BRIEF_ANALYSIS: 'sp_BriefAnalysis',
+    },
+    assistantDefinitions: {
+      ...realDefs.assistantDefinitions,
+      sp_Account_Manager: 'Do stuff',
+      sp_Project_Manager: 'Do stuff',
+      sp_Collaboration_Orchestrator: 'Orchestrate',
+      sp_BriefAnalysis: 'Analyze',
+    }
+  };
+});
 jest.mock('../../agents/flowSteps/flowPrompts', () => ({
   getAssignableSpecialists: jest.fn(() => ['sp_Account_Manager', 'sp_Project_Manager']),
   PHASE1: {
