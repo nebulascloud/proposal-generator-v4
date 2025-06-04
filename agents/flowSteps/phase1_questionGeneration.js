@@ -3,7 +3,8 @@
 const responsesAgent = require('../responsesAgent');
 const contextModel = require('../../db/models/context');
 const { PHASE1 } = require('./flowPrompts');
-const { VALID_SPECIALISTS, isValidSpecialist, getProperRoleName } = require('../assistantDefinitions');
+const { VALID_SPECIALISTS, isValidSpecialist, getProperRoleName, assistantDefinitions } = require('../assistantDefinitions');
+const Agent = require('../../db/models/agent');
 const { updateSessionStatus } = require('./flowUtilities'); // Added import
 
 /**
@@ -36,6 +37,13 @@ async function generateSpecialistQuestions(currentProposalId, sessionId, briefCo
         continue;
       }
       
+      const instructions = assistantDefinitions[validRole];
+      if (!instructions) {
+        console.error(`[generateSpecialistQuestions] Missing assistant definition for ${validRole}`);
+        continue;
+      }
+      await Agent.getOrCreate(validRole, instructions);
+
       // Use centralized prompt from flowPrompts.js with role placeholder replaced
       const questionPrompt = PHASE1.GENERATE_SPECIALIST_QUESTIONS.replace('{role}', validRole);
       

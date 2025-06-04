@@ -61,9 +61,12 @@ async function getOrCreate(name, instructions = '') {
   else if (instructions && agent.instructions !== instructions) {
     // Ensure instructions is a string
     const safeInstructions = instructions || '';
-    
-    await db('agents').where({ id: agent.id }).update({ instructions: safeInstructions });
+    await db('agents').where({ id: agent.id }).update({ 
+      instructions: safeInstructions,
+      updated_at: db.fn.now() // Ensure updated_at is set to current timestamp
+    });
     agent.instructions = safeInstructions;
+    agent.updated_at = new Date(); // For in-memory return value
   }
   
   return agent;

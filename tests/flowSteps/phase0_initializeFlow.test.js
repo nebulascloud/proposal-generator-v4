@@ -5,16 +5,20 @@ const responsesAgent = require('../../agents/responsesAgent');
 const defaultTemplate = require('../../templates/defaultTemplate');
 const Session = require('../../db/models/session');
 const contextModel = require('../../db/models/context');
-
+const Agent = require('../../db/models/agent');
 jest.mock('../../agents/responsesAgent');
 jest.mock('../../db/models/session');
 jest.mock('../../db/models/context');
+jest.mock('../../db/models/agent');
 jest.mock('../../templates/defaultTemplate', () => ({ sections: [{ id: 's1', name: 'Section 1' }] }));
+const { assistantDefinitions } = require('../../agents/assistantDefinitions');
 
 describe('initializeFlow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     global.flowJobs = {};
+    // Mock Agent.getOrCreate to always resolve (simulate DB sync success)
+    Agent.getOrCreate = jest.fn().mockResolvedValue({ name: 'mock', instructions: 'mock' });
   });
 
   it('should initialize flow and return expected output', async () => {
@@ -52,6 +56,7 @@ describe('initializeFlow', () => {
       initialCustomerReviewAnswers,
     });
     expect(global.flowJobs[jobId].proposalId).toBe(result.currentProposalId);
+    expect(Agent.getOrCreate).toHaveBeenCalled();
   });
 
   it('should throw if session creation fails', async () => {
@@ -68,5 +73,22 @@ describe('initializeFlow', () => {
     await expect(
       initializeFlow({}, {}, 'job-err2')
     ).rejects.toThrow('Failed to initialize flow: Failed to log brief in contexts table: upload error');
+  });
+
+  it('should continue if some agents fail to sync', async () => {
+    // Simulate one agent failing
+    const agentNames = Object.keys(assistantDefinitions);
+    let callCount = 0;
+    Agent.getOrCreate.mockImplementation((name) => {
+      callCount++;
+      if (callCount === 1) throw new Error('sync error');
+      return Promise.resolve({ name, instructions: 'mock' });
+    });
+    Session.create.mockResolvedValue({ id: 'session-1' });
+    contextModel.create.mockResolvedValue({ id: 'context-1' });
+    responsesAgent.resetProgress = jest.fn().mockResolvedValue();
+    const result = await initializeFlow({ title: 'Test' }, {}, 'job-err3');
+    expect(result).toHaveProperty('currentProposalId');
+    expect(Agent.getOrCreate).toHaveBeenCalled();
   });
 });

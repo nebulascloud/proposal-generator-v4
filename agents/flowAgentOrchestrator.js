@@ -4,7 +4,8 @@ const { initializeFlow } = require('./flowSteps/phase0_initializeFlow');
 const { analyzeBrief, assignProposalSections } = require('./flowSteps/phase1_briefProcessing');
 const { generateSpecialistQuestions, organizeAllQuestions } = require('./flowSteps/phase1_questionGeneration');
 // const { defaultTemplate } = require('../templates/defaultTemplate'); // No longer directly used here for specialist list
-const { getAssignableSpecialists } = require('./assistantDefinitions'); // Import getAssignableSpecialists
+const { getAssignableSpecialists, assistantDefinitions } = require('./assistantDefinitions'); // Import getAssignableSpecialists
+const Agent = require('../db/models/agent');
 
 /**
  * Orchestrates the full proposal generation flow by calling each phase helper in sequence.
@@ -16,6 +17,16 @@ const { getAssignableSpecialists } = require('./assistantDefinitions'); // Impor
  */
 async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
   try {
+    // --- Initial Agent Sync (Warm-up) ---
+    for (const [agentName, instructions] of Object.entries(assistantDefinitions)) {
+      try {
+        await Agent.getOrCreate(agentName, instructions);
+      } catch (err) {
+        console.error(`[Agent Sync] Failed to sync agent '${agentName}':`, err.message);
+        // Optionally: throw or continue depending on strictness required
+      }
+    }
+
     // --- Phase 0: Initialization & Setup ---
     const initResult = await initializeFlow(brief, customerReviewAnswers, jobId);
     // sections is no longer returned by initializeFlow

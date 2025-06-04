@@ -3,7 +3,8 @@
 const responsesAgent = require('../responsesAgent');
 const contextModel = require('../../db/models/context');
 const { PHASE1 } = require('./flowPrompts');
-const { VALID_SPECIALISTS } = require('../assistantDefinitions');
+const { VALID_SPECIALISTS, assistantDefinitions } = require('../assistantDefinitions');
+const Agent = require('../../db/models/agent');
 const { getProposalSections, updateSessionStatus } = require('./flowUtilities');
 
 /**
@@ -24,6 +25,12 @@ async function analyzeBrief(currentProposalId, sessionId, briefContextId, jobId)
     await updateSessionStatus(sessionId, 'phase1.1_analyze_brief_started');
     // Use centralized prompt from flowPrompts.js
     const analysisPrompt = PHASE1.ANALYZE_BRIEF;
+
+    // Ensure agent exists in DB before use
+    const agentName = VALID_SPECIALISTS.SP_BRIEF_ANALYSIS;
+    const instructions = assistantDefinitions[agentName];
+    if (!instructions) throw new Error(`Missing assistant definition for ${agentName}`);
+    await Agent.getOrCreate(agentName, instructions);
 
     // Call the AI agent for analysis
     const analysisResponse = await responsesAgent.createInitialResponse(
@@ -84,6 +91,12 @@ async function assignProposalSections(currentProposalId, sessionId, briefContext
     // Use centralized prompt from flowPrompts.js with formatted sections
     const sectionsText = currentSections.map(s => s.name || s).join(', ');
     const assignPrompt = PHASE1.ASSIGN_PROPOSAL_SECTIONS_WITH_SECTIONS.replace('{sections}', sectionsText);
+
+    // Ensure agent exists in DB before use
+    const agentName = VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR;
+    const instructions = assistantDefinitions[agentName];
+    if (!instructions) throw new Error(`Missing assistant definition for ${agentName}`);
+    await Agent.getOrCreate(agentName, instructions);
 
     // Call the AI agent for assignments
     const assignResponse = await responsesAgent.createInitialResponse(

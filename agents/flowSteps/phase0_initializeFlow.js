@@ -5,6 +5,8 @@ const responsesAgent = require('../responsesAgent');
 const Session = require('../../db/models/session');
 const contextModel = require('../../db/models/context');
 const { updateSessionStatus } = require('./flowUtilities');
+const { assistantDefinitions } = require('../assistantDefinitions');
+const Agent = require('../../db/models/agent');
 
 /**
  * Phase 0: Initialization & Setup
@@ -20,6 +22,23 @@ async function initializeFlow(brief, initialCustomerReviewAnswers, jobId) {
   // Generate a new proposal ID
   const currentProposalId = uuidv4();
   let sessionId; // Declare sessionId here to be available in catch block
+
+  // --- Agent DB Sync (Phase 0) ---
+  // This is a batch sync, so we degrade gracefully and warn if any fail
+  const failedAgents = [];
+  for (const [agentName, instructions] of Object.entries(assistantDefinitions)) {
+    try {
+      await Agent.getOrCreate(agentName, instructions);
+    } catch (err) {
+      failedAgents.push({ agentName, error: err.message });
+      // Optionally: log error
+      console.warn(`[Phase0 Agent Sync] Failed to sync agent '${agentName}': ${err.message}`);
+    }
+  }
+  if (failedAgents.length) {
+    // Log a warning, but do not throw. The flow can continue, but downstream steps should check for missing agents as needed.
+    console.warn(`[Phase0 Agent Sync] Some agents failed to sync:`, failedAgents.map(a => a.agentName).join(', '));
+  }
 
   try {
     // Create and store a new Session in the database
