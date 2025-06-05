@@ -99,7 +99,7 @@ async function initializeFlow(brief, initialCustomerReviewAnswers, jobId) {
   } catch (err) {
     // If sessionId was obtained, update status to failed.
     if (sessionId) {
-      const currentSession = await Session.findByPk(sessionId);
+      const currentSession = await Session.getById(sessionId);
       // Check if a more specific failure status was already set by a nested try/catch
       if (currentSession && !currentSession.status.startsWith('phase0_initialize_flow_failed')) {
         await updateSessionStatus(sessionId, 'phase0_initialize_flow_failed');

@@ -29,7 +29,7 @@ describe('initializeFlow', () => {
     const fakeSession = { id: 'session-abc' };
     const fakeContextId = 'context-xyz';
     Session.create.mockResolvedValue({ ...fakeSession, createdAt: new Date(), jobId, proposalId: '3ce7fbba-5744-43fe-b840-e73a4e5f58f1', status: 'phase0_initialize_flow_started' });
-    Session.findByPk = jest.fn().mockResolvedValue({ id: 'session-1', status: 'phase0_initialize_flow_started' });
+    Session.getById = jest.fn().mockResolvedValue({ id: 'session-1', status: 'phase0_initialize_flow_started' });
     const fakeContextRecord = { id: fakeContextId };
 
     responsesAgent.resetProgress = jest.fn().mockResolvedValue();

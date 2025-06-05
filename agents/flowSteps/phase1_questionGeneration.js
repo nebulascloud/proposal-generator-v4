@@ -5,6 +5,7 @@ const contextModel = require('../../db/models/context');
 const { PHASE1 } = require('./flowPrompts');
 const { VALID_SPECIALISTS, isValidSpecialist, getProperRoleName, assistantDefinitions } = require('../assistantDefinitions');
 const Agent = require('../../db/models/agent');
+const flowUtilities = require('./flowUtilities'); // Import the full module for access to all utilities
 const { updateSessionStatus } = require('./flowUtilities'); // Added import
 
 /**
@@ -17,11 +18,17 @@ const { updateSessionStatus } = require('./flowUtilities'); // Added import
  * @param {Array<string>} specialistRoles
  * @param {string} assignResponseId
  * @param {string} jobId
+ * @param {Array<string>} [additionalContextIds=[]] - Additional context IDs to include (for sequential mode)
  * @returns {Promise<{allQuestions: Array, questionsContextIds: Array, lastQuestionResponseId: string}>}
  */
-async function generateSpecialistQuestions(currentProposalId, sessionId, briefContextId, analysisContextId, specialistRoles, assignResponseId, jobId) {
+async function generateSpecialistQuestions(currentProposalId, sessionId, briefContextId, analysisContextId, specialistRoles, assignResponseId, jobId, additionalContextIds = []) {
   if (!currentProposalId || !sessionId || !briefContextId || !analysisContextId || !specialistRoles || !assignResponseId || !jobId) {
     throw new Error('Missing required parameter for generateSpecialistQuestions');
+  }
+  
+  // Ensure additionalContextIds is an array
+  if (!Array.isArray(additionalContextIds)) {
+    additionalContextIds = [];
   }
   try {
     await updateSessionStatus(sessionId, 'phase1.3_generate_specialist_questions_started');
@@ -44,12 +51,44 @@ async function generateSpecialistQuestions(currentProposalId, sessionId, briefCo
       }
       await Agent.getOrCreate(validRole, instructions);
 
-      // Use centralized prompt from flowPrompts.js with role placeholder replaced
-      const questionPrompt = PHASE1.GENERATE_SPECIALIST_QUESTIONS.replace('{role}', validRole);
+      // Determine which prompt to use based on whether we're in sequential mode
+      let questionPrompt;
+      let previousQuestions = '';
+      
+      // Add any additional contexts to the context list
+      const contextIds = [briefContextId, analysisContextId, ...additionalContextIds];
+      
+      // If we have additional contexts (sequential mode), use the sequential prompt and get previous questions
+      if (additionalContextIds.length > 0) {
+        // In sequential mode, we need to fetch the previous questions to show in the prompt
+        try {
+          // Get the previous questions from the context
+          for (const contextId of additionalContextIds) {
+            let context = await contextModel.getById(contextId); // Removed findByPk check
+            if (context && context.data) {
+              const previousQuestionsData = typeof context.data === 'object' ? context.data : JSON.parse(context.data);
+              previousQuestions += flowUtilities.formatPreviousQuestions(previousQuestionsData) + '\\n\\n';
+            }
+          }
+          
+          // Use the sequential prompt with previous questions included
+          questionPrompt = PHASE1.GENERATE_SPECIALIST_QUESTIONS_SEQUENTIAL
+            .replace('{role}', validRole)
+            .replace('{previousQuestions}', previousQuestions || 'No previous questions available.');
+            
+          console.log(`[Sequential Mode] Generating questions for ${validRole} with context from previous specialists`);
+        } catch (err) {
+          console.warn(`Error retrieving previous questions: ${err.message}. Falling back to standard prompt.`);
+          questionPrompt = PHASE1.GENERATE_SPECIALIST_QUESTIONS.replace('{role}', validRole);
+        }
+      } else {
+        // Standard parallel mode prompt
+        questionPrompt = PHASE1.GENERATE_SPECIALIST_QUESTIONS.replace('{role}', validRole);
+      }
       
       const response = await responsesAgent.createInitialResponse(
         questionPrompt,
-        [briefContextId, analysisContextId],
+        contextIds,
         validRole,
         'Specialist Questions',
         currentProposalId,
@@ -132,17 +171,44 @@ async function organizeAllQuestions(currentProposalId, sessionId, briefContextId
   }
   try {
     await updateSessionStatus(sessionId, 'phase1.4_organize_all_questions_started');
+    
+    // Removed MAX_QUESTIONS and related question limiting/distribution logic
+    
     // Use centralized prompt from flowPrompts.js with questions placeholder replaced
+    // The 'allQuestions' variable here will be the original, unfiltered list.
     const dedupePrompt = PHASE1.ORGANIZE_ALL_QUESTIONS.replace('{allQuestions}', JSON.stringify(allQuestions));
     
-    const response = await responsesAgent.createInitialResponse(
-      dedupePrompt,
-      [briefContextId, analysisContextId],
-      VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
-      'Organize Questions',
-      currentProposalId,
-      lastQuestionResponseId
-    );
+    // Try with retries to handle potential timeouts
+    let response;
+    let retries = 2; // Total 3 attempts
+    let backoffDelay = 1000; // Start with 1 second
+    
+    while (retries >= 0) {
+      try {
+        console.log(`Organizing questions (attempt ${3 - retries}/3). Processing ${allQuestions.length} questions...`);
+        response = await responsesAgent.createInitialResponse(
+          dedupePrompt,
+          [briefContextId, analysisContextId],
+          VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
+          'Organize Questions',
+          currentProposalId,
+          lastQuestionResponseId
+        );
+        break; // If successful, exit the retry loop
+      } catch (error) {
+        if (retries === 0) {
+          console.error(`Final attempt to organize questions failed: ${error.message}`);
+          throw error; // No more retries, propagate the error
+        }
+        
+        console.warn(`Attempt ${3 - retries} to organize questions failed: ${error.message}. Retrying in ${backoffDelay/1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        backoffDelay *= 2; // Exponential backoff
+        retries--;
+        
+        // Removed logic that further reduced questions on retry
+      }
+    }
     let organizedQuestions;
     try {
       organizedQuestions = JSON.parse(response.response);

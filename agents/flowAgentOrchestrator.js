@@ -13,9 +13,10 @@ const Agent = require('../db/models/agent');
  * @param {Object} params.brief
  * @param {Object} [params.customerReviewAnswers]
  * @param {string} params.jobId
+ * @param {boolean} [params.parallelAgentQuestionsMode=true] If true, agent questions are generated in parallel. If false, questions are generated sequentially with context chaining.
  * @returns {Promise<Object>} Final result of the flow
  */
-async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
+async function runFullFlow({ brief, customerReviewAnswers, jobId, parallelAgentQuestionsMode = true }) {
   try {
     // --- Initial Agent Sync (Warm-up) ---
     for (const [agentName, instructions] of Object.entries(assistantDefinitions)) {
@@ -47,33 +48,101 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
     // Get assignable specialist agent names using the function from assistantDefinitions
     const specialistAgentNames = getAssignableSpecialists();
 
-    // Determine specialist roles from assignments (this might be redundant or used for a different purpose later)
-    // const specialistRoles = Array.from(new Set(Object.values(assignments))); 
-    // For now, we iterate through specialistAgentNames derived from getAssignableSpecialists for question generation.
+    // Log which mode we're using for question generation
+    console.log(`Using ${parallelAgentQuestionsMode ? 'PARALLEL' : 'SEQUENTIAL'} mode for agent question generation`);
 
     let allQuestions = [];
+    let questionsContextIds = [];
     let lastQuestionResponseId = null;
+    let warnings = [];
     
     // For logging/debugging purposes
     console.log(`Starting question generation for ${specialistAgentNames.length} specialist agents`);
     
-    for (const agentName of specialistAgentNames) {
-      // Generate questions for each agent using the standard interface defined in refactoring plan
-      const result = await generateSpecialistQuestions(
-        currentProposalId, sessionId, briefContextId, analysisContextId, [agentName], assignResponseId, jobId
-      );
+    if (parallelAgentQuestionsMode) {
+      // PARALLEL MODE: Process all agents in parallel using Promise.all
+      console.log('Running specialist question generation in PARALLEL mode');
       
-      // Standard interface per the refactoring plan
-      if (!result.allQuestions || !Array.isArray(result.allQuestions)) {
-        console.error(`Error: generateSpecialistQuestions for ${agentName} did not return expected allQuestions array`);
-        continue;
+      try {
+        const questionPromises = specialistAgentNames.map(agentName => 
+          generateSpecialistQuestions(
+            currentProposalId, sessionId, briefContextId, analysisContextId, 
+            [agentName], assignResponseId, jobId
+          ).catch(error => {
+            // Capture errors but don't fail the entire process
+            console.error(`Error generating questions for ${agentName}:`, error);
+            warnings.push({ agent: agentName, error: error.message });
+            // Return a placeholder result to maintain array structure
+            return { allQuestions: [], questionsContextIds: [], lastQuestionResponseId: null };
+          })
+        );
+        
+        // Wait for all question generation to complete
+        const results = await Promise.all(questionPromises);
+        
+        // Process the results
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          const agentName = specialistAgentNames[i];
+          
+          if (result.allQuestions && Array.isArray(result.allQuestions)) {
+            console.log(`Collected ${result.allQuestions.length} questions from ${agentName}`);
+            allQuestions = allQuestions.concat(result.allQuestions);
+            
+            // Collect context IDs and update lastQuestionResponseId
+            if (result.questionsContextIds) {
+              questionsContextIds = questionsContextIds.concat(result.questionsContextIds);
+            }
+            
+            if (result.lastQuestionResponseId) {
+              lastQuestionResponseId = result.lastQuestionResponseId;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in parallel question generation:', error);
+        throw new Error(`Failed to generate questions in parallel mode: ${error.message}`);
       }
+    } else {
+      // SEQUENTIAL MODE: Process agents one by one, passing previous questions as context
+      console.log('Running specialist question generation in SEQUENTIAL mode');
       
-      console.log(`Collected ${result.allQuestions.length} questions from ${agentName}`);
-      allQuestions = allQuestions.concat(result.allQuestions);
-      // Correctly update lastQuestionResponseId with the ID from the latest specialist question generation
-      if (result.lastQuestionResponseId) {
-        lastQuestionResponseId = result.lastQuestionResponseId;
+      // Keep track of all previous questions context IDs
+      let allPreviousQuestionContextIds = [];
+      
+      for (const agentName of specialistAgentNames) {
+        try {
+          // Generate questions for each agent, passing ALL previous question contexts
+          // This ensures each agent sees questions from ALL previous agents, not just the last one
+          const result = await generateSpecialistQuestions(
+            currentProposalId, sessionId, briefContextId, analysisContextId, 
+            [agentName], assignResponseId, jobId, allPreviousQuestionContextIds
+          );
+          
+          if (!result.allQuestions || !Array.isArray(result.allQuestions)) {
+            console.error(`Error: generateSpecialistQuestions for ${agentName} did not return expected allQuestions array`);
+            warnings.push({ agent: agentName, error: 'Failed to generate expected question format' });
+            continue;
+          }
+          
+          console.log(`Collected ${result.allQuestions.length} questions from ${agentName}`);
+          allQuestions = allQuestions.concat(result.allQuestions);
+          
+          // Update context IDs and lastQuestionResponseId
+          if (result.questionsContextIds && result.questionsContextIds.length > 0) {
+            questionsContextIds = questionsContextIds.concat(result.questionsContextIds);
+            // Add the new question context to our accumulated list
+            allPreviousQuestionContextIds = allPreviousQuestionContextIds.concat(result.questionsContextIds);
+            console.log(`Added questions from ${agentName} to context. Now have ${allPreviousQuestionContextIds.length} question contexts.`);
+          }
+          
+          if (result.lastQuestionResponseId) {
+            lastQuestionResponseId = result.lastQuestionResponseId;
+          }
+        } catch (error) {
+          console.error(`Error generating questions for ${agentName}:`, error);
+          warnings.push({ agent: agentName, error: error.message });
+        }
       }
     }
 
@@ -95,6 +164,8 @@ async function runFullFlow({ brief, customerReviewAnswers, jobId }) {
       organizedQuestions,
       organizedQuestionsContextId,
       organizedQuestionsResponseId,
+      questionGenerationMode: parallelAgentQuestionsMode ? 'parallel' : 'sequential',
+      warnings: warnings.length > 0 ? warnings : undefined, // Only include warnings if there are any
       status: 'phase1_complete',
     };
   } catch (err) {

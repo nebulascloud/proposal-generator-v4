@@ -108,11 +108,59 @@ async function updateSessionStatus(sessionId, status) {
   }
 }
 
+/**
+ * Formats questions from previous specialists for use in sequential question generation.
+ * Groups questions by specialist role for better organization.
+ * @param {Array<Object>} questions - Array of question objects from previous specialists
+ * @returns {string} Formatted string of previous questions
+ */
+function formatPreviousQuestions(questions) {
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return 'No previous questions available.';
+  }
+  
+  // Handle case where the question data might be nested
+  if (questions.length === 1 && questions[0].questions && Array.isArray(questions[0].questions)) {
+    questions = questions[0].questions.map(q => ({...q, role: questions[0].role || 'Unknown Specialist'}));
+  }
+  
+  // Group questions by specialist role
+  const questionsBySpecialist = questions.reduce((acc, q) => {
+    const specialist = q.role || 'Unknown Specialist';
+    if (!acc[specialist]) acc[specialist] = [];
+    acc[specialist].push(q);
+    return acc;
+  }, {});
+  
+  // Build formatted output grouped by specialist
+  const formattedSections = [];
+  
+  for (const [specialist, specialistQuestions] of Object.entries(questionsBySpecialist)) {
+    // Format the section for this specialist
+    const formattedQuestions = specialistQuestions.map(q => {
+      let questionText = q.question;
+      
+      // Add importance if available
+      if (q.importance) {
+        questionText += ` (${q.importance} importance)`;
+      }
+      
+      return questionText;
+    }).join('\n\n');
+    
+    const specialistSection = `Questions from ${specialist}:\n\n${formattedQuestions}`;
+    formattedSections.push(specialistSection);
+  }
+    
+  return formattedSections.join('\n\n');
+}
+
 module.exports = {
   parseJson,
   deepClone,
   removeUndefined,
   getProposalSections,
   updateSessionStatus, // Export the new utility
+  formatPreviousQuestions
   // ...add other utilities as needed
 };

@@ -159,7 +159,28 @@ JSON TEMPLATE (example themes, questions, and source roles):
     "Technical": [
       { "question": "What are your key technical requirements and integration needs?", "sources": [exampleAssignableRole3, exampleAssignableRole2], "id": "q3" }
     ]
-  }
+  },
+  
+  // Sequential mode specific prompt - provides context about previous questions
+  GENERATE_SPECIALIST_QUESTIONS_SEQUENTIAL: `As the {role}, generate 3-5 important strategic clarifying questions for the proposal based on the brief and analysis. 
+
+IMPORTANT: You have been provided with questions that other specialists have already asked. AVOID ASKING DUPLICATE OR SIMILAR QUESTIONS. Focus on generating questions that are UNIQUE to your expertise and perspective that other specialists have not already covered.
+
+PREVIOUS QUESTIONS:
+{previousQuestions}
+
+IMPORTANT: Format your ENTIRE response as a valid JSON object. This object must contain a single key named "questions", and its value must be a JSON array of question objects as shown in the template below. Each question object in the array must include the fields shown. Your response must be properly formatted JSON with no additional text outside the main JSON object.
+
+JSON TEMPLATE:
+{
+  "questions": [
+    {
+      "question": "What specific aspect of [your expertise area] should we focus on?",
+      "importance": "high",
+      "rationale": "This addresses a unique area not covered by other specialists"
+    }
+  ]
+}`
   // Add more prompts as needed for Phase 1
 };
 

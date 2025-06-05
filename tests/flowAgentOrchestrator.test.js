@@ -45,7 +45,7 @@ describe('flowAgentOrchestrator', () => {
     // Ensure Session.create and Session.update are mock functions
     Session.create = jest.fn().mockResolvedValue({ id: 'session-1' });
     Session.update = jest.fn().mockResolvedValue({ id: 'session-1', status: 'initialized' });
-    Session.findByPk = jest.fn().mockResolvedValue({ id: 'session-1', status: 'initialized' });
+    Session.getById = jest.fn().mockResolvedValue({ id: 'session-1', status: 'initialized' });
     // Ensure Agent.getOrCreate is a mock function
     Agent.getOrCreate = jest.fn().mockResolvedValue({ id: 'agent-1', name: 'sp_Account_Manager' });
     // Mock contextModel.create to return unique context IDs for each call

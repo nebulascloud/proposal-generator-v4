@@ -27,6 +27,29 @@ A minimal MVP service to generate proposal drafts via HTTP requests.
 - `POST /agents/proposals` → Generate a proposal via single-step LLM agent
 - `POST /agents/collaborate` → Multi-agent collaboration flow (stubbed in test)
 - `POST /agents/flow` → End-to-end QA, content development, review and final proposal (uses LangChain flows)
+- `POST /api/flow/runFullFlow` → Modern endpoint for full proposal generation flow with additional options (see API Features below)
+
+## API Features
+
+### Parallel/Sequential Agent Question Generation
+
+The `/api/flow/runFullFlow` endpoint supports both parallel and sequential specialist question generation:
+
+- **Parameter**: `parallelAgentQuestionsMode` (boolean, default: `true`)
+- **Behavior**:
+  - When `true` (default): All specialist agents generate questions simultaneously for faster results
+  - When `false`: Agents run sequentially, with each agent seeing previous agents' questions to reduce duplicates
+
+Example request:
+```json
+{
+  "brief": { 
+    "projectTitle": "E-commerce Website Redesign",
+    "projectDescription": "Client needs a modern redesign for their online store"
+  },
+  "parallelAgentQuestionsMode": false
+}
+```
 
 ## Local Development
 
