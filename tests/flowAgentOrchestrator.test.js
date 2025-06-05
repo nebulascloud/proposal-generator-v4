@@ -25,6 +25,8 @@ const { runFullFlow } = require('../agents/flowAgentOrchestrator');
 const assistantDefinitions = require('../agents/assistantDefinitions');
 const Session = require('../db/models/session');
 const Agent = require('../db/models/agent');
+const request = require('supertest');
+const app = require('../index');
 
 // Minimal mock for responsesAgent if needed
 jest.mock('../agents/responsesAgent', () => ({
@@ -73,5 +75,58 @@ describe('flowAgentOrchestrator', () => {
     // Assert
     expect(result).toBeDefined();
     expect(Session.create).toHaveBeenCalled();
+  });
+});
+
+describe('API: /api/flow/runFullFlow', () => {
+  it('should expose Swagger docs with the new /api/flow/runFullFlow definition', async () => {
+    const res = await request(app).get('/openapi.json');
+    const pathKeys = Object.keys(res.body.paths);
+    // Find the correct path key for runFullFlow - it should be "/api/flow/runFullFlow" in the spec
+    const runFullFlowPath = pathKeys.find(k => k.toLowerCase().includes('runfullflow'));
+    expect(res.status).toBe(200);
+    expect(runFullFlowPath).toBeDefined();
+    // Optionally, check the method exists (e.g., post)
+    expect(res.body.paths[runFullFlowPath]).toHaveProperty('post');
+    expect(JSON.stringify(res.body)).toMatch(/parallelAgentQuestionsMode/);
+  });
+
+  it('should accept a POST to /api/flow/runFullFlow with parallelAgentQuestionsMode true', async () => {
+    const res = await request(app)
+      .post('/api/flow/runFullFlow')
+      .send({
+        brief: { client_name: 'Test Client', project_description: 'Test Project' },
+        parallelAgentQuestionsMode: true
+      })
+      .set('Accept', 'application/json');
+    expect(res.status).toBe(202);
+    expect(res.body).toHaveProperty('jobId');
+    expect(res.body).toHaveProperty('status', 'accepted');
+    expect(res.body).toHaveProperty('statusEndpoint');
+    expect(res.body).toHaveProperty('resultEndpoint');
+  });
+
+  it('should accept a POST to /api/flow/runFullFlow with parallelAgentQuestionsMode false', async () => {
+    const res = await request(app)
+      .post('/api/flow/runFullFlow')
+      .send({
+        brief: { client_name: 'Test Client', project_description: 'Test Project' },
+        parallelAgentQuestionsMode: false
+      })
+      .set('Accept', 'application/json');
+    expect(res.status).toBe(202);
+    expect(res.body).toHaveProperty('jobId');
+    expect(res.body).toHaveProperty('status', 'accepted');
+    expect(res.body).toHaveProperty('statusEndpoint');
+    expect(res.body).toHaveProperty('resultEndpoint');
+  });
+
+  it('should return 400 if brief is missing', async () => {
+    const res = await request(app)
+      .post('/api/flow/runFullFlow')
+      .send({})
+      .set('Accept', 'application/json');
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
   });
 });

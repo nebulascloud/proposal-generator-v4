@@ -1,102 +1,76 @@
-FAIL tests/flow.test.js
-  POST /agents/flow
-    ✕ full successful flow using Responses API (84 ms)
-    ✓ returns 400 when missing brief (5 ms)
-    ✕ properly updates session status on completion and failure (6 ms)
 
-  ● POST /agents/flow › full successful flow using Responses API
+> proposal-generator-v4@1.0.0 test
+> jest --coverage tests/flowAgentOrchestrator.test.js
 
-    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+  console.info
+    Not all input has been taken into account at your final specification.
 
-    Expected: StringContaining "review the attached section draft (\"Front Cover\"", ["brief-file-id", "analysis-file-id", "questions-file-id", "customer_answers_initial-file-id", "Front_Cover_draft-file-id"], "QualityManager", "Phase3_ReviewSection_Front_Cover", "proposal-1748308691209"
-    Received
-           1
-              "Analyze the provided customer brief thoroughly. Consider all aspects including business objectives, technical requirements, commercial aspects, and potential challenges. Provide a comprehensive assessment that will guide the proposal development process.",
-              Array [
-                "brief-file-id",
-            -   "analysis-file-id",
-            -   "questions-file-id",
-            -   "customer_answers_initial-file-id",
-            -   "Front_Cover_draft-file-id",
-              ],
-              "BriefAnalysis",
-              "Phase1_BriefAnalysis",
-              "proposal-1748308691209",
-           2
-              "Based on the brief and analysis, assign these sections: Front Cover, Executive Summary, Problem Statement, Proposed Solution, Project Deliverables, Project Timeline, Pricing, Case Studies and Testimonials, About Us, Next Steps, Appendices.···
-    IMPORTANT: You must ONLY use these exact roles in your assignments: sp_Account_Manager, sp_Project_Manager, sp_Commercial_Manager, sp_Legal_Counsel, sp_Solution_Architect, sp_Data_Architect, sp_Lead_Engineer, sp_Quality_Manager, sp_Collaboration_Orchestrator·
-    Return a JSON object mapping each section name to exactly one of these role names.",
-              Array [
-                "brief-file-id",
-                "analysis-file-id",
-            -   "questions-file-id",
-            -   "customer_answers_initial-file-id",
-            -   "Front_Cover_draft-file-id",
-              ],
-              "sp_Collaboration_Orchestrator",
-              "Phase1_SectionAssignments",
-              "proposal-1748308691209",
-           3
-              "As a Account_Manager, review the customer brief and generate 3-5 important strategic clarifying questions that would help you better understand the customer's needs and provide an expert proposal.······
-    Your questions should:
-    - Be relevant to your specific expertise and role
-    - Focus on understanding business needs, constraints, and priorities
-    - Cover different aspects of the project that need clarification
-    - NOT ask how to write or structure the proposal
-    - NOT ask section-specific questions
-    - Demonstrate your expertise in your domain·
-    Return your questions as a JSON array in this format:
-    [
-      {
-        \"question\": \"Your first question text here\",
-        \"rationale\": \"Brief explanation of why this question is important from your role's perspective\",
-        \"category\": \"General topic/category for this question (e.g., 'Technical Requirements', 'Timeline', 'Business Objectives')\"
-      },
-      ...more questions...
-    ]",
-              Array [
-                "brief-file-id",
-                "analysis-file-id",
-            -   "questions-file-id",
-            -   "customer_answers_initial-file-id",
-            -   "Front_Cover_draft-file-id",
-              ],
-              "sp_Account_Manager",
-              "Phase1_ClarifyingQuestions",
-              "proposal-1748308691209",
+      at build (node_modules/swagger-jsdoc/src/specification.js:309:15)
 
-    Number of calls: 34
+FAIL tests/flowAgentOrchestrator.test.js
+  flowAgentOrchestrator
+    ✓ should run the initial phases of the flow without error (3 ms)
+  API: /api/flow/runFullFlow
+    ✕ should expose Swagger docs with the new /api/flow/runFullFlow definition (14 ms)
+    ✓ should accept a POST to /api/flow/runFullFlow with parallelAgentQuestionsMode true (9 ms)
+    ✓ should accept a POST to /api/flow/runFullFlow with parallelAgentQuestionsMode false (5 ms)
+    ✓ should return 400 if brief is missing (2 ms)
 
-      356 |       for (const section of sections) {
-      357 |         const draftFileId = flowData.sectionDrafts[section].fileId;
-    > 358 |         expect(responsesAgent.createInitialResponse).toHaveBeenCalledWith(
-          |                                                      ^
-      359 |           expect.stringContaining(`review the attached section draft (\"${section}\"`),
-      360 |           [flowData.briefFileId, flowData.analysisFileId, flowData.questionsFileId, flowData.customerAnswersFileId, draftFileId],
-      361 |           "QualityManager",
+  ● API: /api/flow/runFullFlow › should expose Swagger docs with the new /api/flow/runFullFlow definition
 
-      at Object.toHaveBeenCalledWith (tests/flow.test.js:358:54)
+    expect(received).toBeDefined()
 
-  ● POST /agents/flow › properly updates session status on completion and failure
+    Received: undefined
 
-    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+      86 |     const runFullFlowPath = pathKeys.find(k => k.toLowerCase().includes('runfullflow'));
+      87 |     expect(res.status).toBe(200);
+    > 88 |     expect(runFullFlowPath).toBeDefined();
+         |                             ^
+      89 |     // Optionally, check the method exists (e.g., post)
+      90 |     expect(res.body.paths[runFullFlowPath]).toHaveProperty('post');
+      91 |     expect(JSON.stringify(res.body)).toMatch(/parallelAgentQuestionsMode/);
 
-    Expected: ObjectContaining {"completedAt": Any<Date>, "id": "test-session-id-1748308691247", "metadata": ObjectContaining {"finalReport": {"status": "completed"}}, "status": "completed"}
+      at Object.toBeDefined (tests/flowAgentOrchestrator.test.js:88:29)
 
-    Number of calls: 0
-
-      542 |
-      543 |       // Verify session.update was called with the right parameters for completion
-    > 544 |       expect(Session.update).toHaveBeenCalledWith(
-          |                              ^
-      545 |         expect.objectContaining({
-      546 |           id: sessionId,
-      547 |           status: 'completed',
-
-      at Object.toHaveBeenCalledWith (tests/flow.test.js:544:30)
-
+----------------------------------------|---------|----------|---------|---------|----------------------------------------------------
+File                                    | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                  
+----------------------------------------|---------|----------|---------|---------|----------------------------------------------------
+All files                               |   28.68 |    12.77 |   15.44 |   29.49 |                                                    
+ proposal-generator-v4                  |   73.21 |       40 |   33.33 |   73.21 |                                                    
+  index.js                              |   73.21 |       40 |   33.33 |   73.21 | 20-25,149,153,161-168,172-174                      
+ proposal-generator-v4/agents           |   18.82 |     4.63 |    12.5 |   19.59 |                                                    
+  assistantAgent.js                     |    4.47 |     1.56 |       0 |    4.76 | 7-14,19-253                                        
+  assistantDefinitions.js               |   31.81 |     8.33 |   28.57 |   33.33 | 78-99,123-139                                      
+  defaultTemplate.js                    |       0 |        0 |       0 |       0 |                                                    
+  flowAgentOrchestrator.js              |   84.37 |    66.66 |     100 |   84.37 | 25,68-69,102-103                                   
+  orchestratorAgent.js                  |    10.2 |     6.06 |       0 |   10.41 | 12-82                                              
+  proposalAgent.js                      |   16.66 |        0 |       0 |   16.66 | 10-52                                              
+ proposal-generator-v4/agents/flowSteps |   65.28 |    53.68 |    62.5 |   67.75 |                                                    
+  flowUtilities.js                      |   36.58 |       30 |      50 |   36.84 | 15-25,39-57,70,89-91,100-101,105-107               
+  phase0_initializeFlow.js              |   70.45 |    31.25 |      50 |    75.6 | 33-35,40,83-84,101-111                             
+  phase1_briefProcessing.js             |      80 |       75 |     100 |   83.33 | 22,64-65,83,117,142-143                            
+  phase1_questionGeneration.js          |   69.84 |    75.86 |   66.66 |   70.96 | 24,36-37,42-43,67-80,111-113,131,150,172-173       
+ proposal-generator-v4/db               |   24.09 |    33.33 |    4.54 |   24.69 |                                                    
+  index.js                              |   44.44 |     37.5 |    7.69 |   44.44 | 29-56                                              
+  knexfile.js                           |      50 |      100 |       0 |      50 | 24-44                                              
+  setup.js                              |   11.53 |     4.16 |       0 |      12 | 13-15,20-22,28-119                                 
+ proposal-generator-v4/db/models        |    4.43 |        0 |       0 |    4.67 |                                                    
+  agent.js                              |   13.33 |        0 |       0 |   13.79 | 24-101                                             
+  context.js                            |    5.76 |        0 |       0 |    5.88 | 16-160                                             
+  message.js                            |     2.5 |        0 |       0 |    2.67 | 16-281                                             
+  session.js                            |    3.29 |        0 |       0 |    3.48 | 16-200                                             
+ proposal-generator-v4/routes           |   31.98 |     2.56 |    9.52 |   31.96 |                                                    
+  agentsAssistants.js                   |   21.87 |        0 |       0 |   21.87 | 35-59,97-106                                       
+  agentsFlow.js                         |      75 |      100 |       0 |      75 | 42,48,54                                           
+  agentsOrchestrate.js                  |   30.55 |        0 |       0 |   31.42 | 49-74,81,87                                        
+  agentsProposals.js                    |   43.75 |        0 |       0 |   43.75 | 51-61                                              
+  flowAgentOrchestrator.js              |   52.17 |    11.11 |      50 |   51.11 | 103-108,115-134,139-151                            
+  monitor.js                            |   16.25 |        0 |       0 |   16.45 | 19-39,48-58,71-101,114-122,131-136,145-150,159-182 
+ proposal-generator-v4/templates        |   11.76 |        0 |       0 |    12.5 |                                                    
+  defaultTemplate.js                    |   11.76 |        0 |       0 |    12.5 | 75-92                                              
+----------------------------------------|---------|----------|---------|---------|----------------------------------------------------
 Test Suites: 1 failed, 1 total
-Tests:       2 failed, 1 passed, 3 total
+Tests:       1 failed, 4 passed, 5 total
 Snapshots:   0 total
-Time:        1.049 s, estimated 2 s
-Ran all test suites matching /tests\/flow.test.js/i.
+Time:        0.791 s, estimated 1 s
+Ran all test suites matching /tests\/flowAgentOrchestrator.test.js/i.

@@ -35,6 +35,9 @@ global.orchestratorJobs = orchestratorJobs;
  *               customerReviewAnswers:
  *                 type: string
  *                 description: Pre-supplied customer answers to review questions
+ *               parallelAgentQuestionsMode:
+ *                 type: boolean
+ *                 description: "If true, agent questions are generated in parallel (default: true). If false, questions are generated sequentially with context chaining"
  *     responses:
  *       202:
  *         description: Flow job accepted
@@ -62,7 +65,8 @@ router.post('/runFullFlow', async (req, res) => {
   const schema = Joi.object({
     brief: Joi.object().required(),
     customerAnswers: Joi.string().optional(),
-    customerReviewAnswers: Joi.string().optional()
+    customerReviewAnswers: Joi.string().optional(),
+    parallelAgentQuestionsMode: Joi.boolean().optional()
   }).unknown(true);
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.details[0].message });
@@ -90,8 +94,8 @@ router.post('/runFullFlow', async (req, res) => {
   (async () => {
     try {
       orchestratorJobs[jobId].status = 'processing';
-      // Pass jobId to orchestrator
-      const result = await runFullFlow({ ...value, jobId });
+      // Pass jobId and parallelAgentQuestionsMode to orchestrator
+      const result = await runFullFlow({ ...value, jobId, parallelAgentQuestionsMode: value.parallelAgentQuestionsMode });
       orchestratorJobs[jobId].status = 'completed';
       orchestratorJobs[jobId].result = result;
       orchestratorJobs[jobId].endTime = new Date().toISOString();
