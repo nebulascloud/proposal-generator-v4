@@ -113,17 +113,32 @@ JSON TEMPLATE:
   ]
 }`,
 
-  ORGANIZE_ALL_QUESTIONS: `Organize, deduplicate, and merge the following specialist questions for the proposal.
+  ORGANIZE_ALL_QUESTIONS: `MERGING GUIDELINES - READ CAREFULLY
 
-Your task:
-1. Group questions by theme (Financials, Technical, etc.)
-2. MERGE similar questions into a single comprehensive question
-3. When merging questions, combine all sources into an array
-4. Create a clear, well-formulated question that captures all aspects from the original questions
-5. Ensure no important details are lost when merging questions (i.e. Do NOT summarise, lose, or drop any questions)
-6. Your goal is to ensure that the same question is not asked multiple times, but all relevant information is captured in the final merged question.
+1. Primary-Intent Match Only  
+   - Merge questions only when they request the same core data point (e.g., multiple agents all asking for KPIs).  
+   - If a question touches even one clearly different sub-topic, create a separate question for that topic.
 
-IMPORTANT: Return a JSON object grouping questions by theme. Your ENTIRE response must be a valid, properly-formatted JSON object with no additional text.
+2. One Logical Topic Per Question  
+   - A final question must centre on a single subject area (KPI, DevOps toolchain, compliance framework, etc.).  
+   - Do not chain several subjects together; avoid multi-clause "everything and the kitchen sink" sentences.
+
+3. Word-Count Guardrail  
+   - Keep every merged question 35 words or fewer.  
+   - If a draft exceeds the limit, split it into multiple questions that each meet the rule.
+
+4. Detail Preservation  
+   - Do not drop mandatory details.  
+   - If you need to capture multiple specifics (e.g., update frequency and data volume), embed them as bullet points inside the question string, or write a short series of tightly related questions.
+
+5. No Summaries or Omissions  
+   - Every original nuance must still appear somewhere in the output.
+
+6. Source Tracking  
+   - Combine the 'sources' arrays of any merged questions exactly as before.
+
+OUTPUT FORMAT  
+Return the final result in the same JSON template shown below—nothing more, nothing less.
 
 Questions: {allQuestions}
 
