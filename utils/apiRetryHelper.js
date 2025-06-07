@@ -38,6 +38,10 @@ async function retryWithBackoff(operation, {
       }
       return result;
     } catch (error) {
+      // Immediately throw on non-retryable errors (e.g., HTTP 400)
+      if (error && (error.status === 400)) {
+        throw error;
+      }
       attempt++;
       lastError = error;
       if (attempt > retries) {
