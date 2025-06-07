@@ -46,6 +46,11 @@ jest.mock('../agents/responsesAgent', () => ({
   getTokenUsageReport: jest.fn(),
 }));
 
+// Mock the retryWithBackoff utility
+jest.mock('../utils/apiRetryHelper', () => ({
+  retryWithBackoff: jest.fn((fn) => fn()),
+}));
+
 jest.mock('../db/models/context', () => ({
   create: jest.fn().mockImplementation(() => ({
     id: `context-${Date.now()}`

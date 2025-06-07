@@ -41,6 +41,11 @@ jest.mock('../../agents/responsesAgent', () => ({
   createAndUploadFile: jest.fn(),
 }));
 
+// Mock the retryWithBackoff utility
+jest.mock('../../utils/apiRetryHelper', () => ({
+  retryWithBackoff: jest.fn((fn) => fn()),
+}));
+
 describe('phase1_briefProcessing', () => {
   beforeEach(() => {
     jest.clearAllMocks();

@@ -6,6 +6,7 @@ const { PHASE1 } = require('./flowPrompts');
 const { VALID_SPECIALISTS, assistantDefinitions } = require('../assistantDefinitions');
 const Agent = require('../../db/models/agent');
 const { getProposalSections, updateSessionStatus } = require('./flowUtilities');
+const { retryWithBackoff } = require('../../utils/apiRetryHelper');
 
 /**
  * Phase 1.1: Brief Analysis
@@ -33,12 +34,24 @@ async function analyzeBrief(currentProposalId, sessionId, briefContextId, jobId)
     await Agent.getOrCreate(agentName, instructions);
 
     // Call the AI agent for analysis
-    const analysisResponse = await responsesAgent.createInitialResponse(
-      analysisPrompt,
-      [briefContextId],
-      VALID_SPECIALISTS.SP_BRIEF_ANALYSIS,
-      'Brief Analysis',
-      currentProposalId
+    const analysisResponse = await retryWithBackoff(
+      (timeout) => responsesAgent.createInitialResponse(
+        analysisPrompt,
+        [briefContextId],
+        VALID_SPECIALISTS.SP_BRIEF_ANALYSIS,
+        'Brief Analysis',
+        currentProposalId,
+        null,
+        false,
+        { timeout }
+      ),
+      {
+        retries: 3,
+        initialDelay: 2000,
+        maxDelay: 15000,
+        operationDescription: `OpenAI API - Brief Analysis (proposalId: ${currentProposalId}, sessionId: ${sessionId})`,
+        timeout: responsesAgent.apiTimeout
+      }
     );
 
     // Log the analysis as a context in the database
@@ -99,13 +112,24 @@ async function assignProposalSections(currentProposalId, sessionId, briefContext
     await Agent.getOrCreate(agentName, instructions);
 
     // Call the AI agent for assignments
-    const assignResponse = await responsesAgent.createInitialResponse(
-      assignPrompt,
-      [briefContextId, analysisContextId],
-      VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
-      'Section Assignments',
-      currentProposalId,
-      analysisResponseId
+    const assignResponse = await retryWithBackoff(
+      (timeout) => responsesAgent.createInitialResponse(
+        assignPrompt,
+        [briefContextId, analysisContextId],
+        VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
+        'Section Assignments',
+        currentProposalId,
+        analysisResponseId,
+        false,
+        { timeout }
+      ),
+      {
+        retries: 3,
+        initialDelay: 2000,
+        maxDelay: 15000,
+        operationDescription: `OpenAI API - Section Assignments (proposalId: ${currentProposalId}, sessionId: ${sessionId})`,
+        timeout: responsesAgent.apiTimeout
+      }
     );
 
     // Parse assignments JSON

@@ -7,6 +7,7 @@ const { VALID_SPECIALISTS, isValidSpecialist, getProperRoleName, assistantDefini
 const Agent = require('../../db/models/agent');
 const flowUtilities = require('./flowUtilities'); // Import the full module for access to all utilities
 const { updateSessionStatus } = require('./flowUtilities'); // Added import
+const { retryWithBackoff } = require('../../utils/apiRetryHelper');
 
 /**
  * Phase 1.3: Specialist Question Generation
@@ -86,13 +87,24 @@ async function generateSpecialistQuestions(currentProposalId, sessionId, briefCo
         questionPrompt = PHASE1.GENERATE_SPECIALIST_QUESTIONS.replace('{role}', validRole);
       }
       
-      const response = await responsesAgent.createInitialResponse(
-        questionPrompt,
-        contextIds,
-        validRole,
-        'Specialist Questions',
-        currentProposalId,
-        assignResponseId
+      const response = await retryWithBackoff(
+        (timeout) => responsesAgent.createInitialResponse(
+          questionPrompt,
+          contextIds,
+          validRole,
+          'Specialist Questions',
+          currentProposalId,
+          assignResponseId,
+          false,
+          { timeout }
+        ),
+        {
+          retries: 3,
+          initialDelay: 2000,
+          maxDelay: 15000,
+          operationDescription: `OpenAI API - Specialist Questions (${validRole}, proposalId: ${currentProposalId}, sessionId: ${sessionId})`,
+          timeout: responsesAgent.apiTimeout
+        }
       );
       lastQuestionResponseId = response.id;
       let roleQuestions = [];
@@ -178,37 +190,29 @@ async function organizeAllQuestions(currentProposalId, sessionId, briefContextId
     // The 'allQuestions' variable here will be the original, unfiltered list.
     const dedupePrompt = PHASE1.ORGANIZE_ALL_QUESTIONS.replace('{allQuestions}', JSON.stringify(allQuestions));
     
-    // Try with retries to handle potential timeouts
-    let response;
-    let retries = 2; // Total 3 attempts
-    let backoffDelay = 1000; // Start with 1 second
-    
-    while (retries >= 0) {
-      try {
-        console.log(`Organizing questions (attempt ${3 - retries}/3). Processing ${allQuestions.length} questions...`);
-        response = await responsesAgent.createInitialResponse(
-          dedupePrompt,
-          [briefContextId, analysisContextId],
-          VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
-          'Organize Questions',
-          currentProposalId,
-          lastQuestionResponseId
-        );
-        break; // If successful, exit the retry loop
-      } catch (error) {
-        if (retries === 0) {
-          console.error(`Final attempt to organize questions failed: ${error.message}`);
-          throw error; // No more retries, propagate the error
-        }
-        
-        console.warn(`Attempt ${3 - retries} to organize questions failed: ${error.message}. Retrying in ${backoffDelay/1000} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-        backoffDelay *= 2; // Exponential backoff
-        retries--;
-        
-        // Removed logic that further reduced questions on retry
+    // Log the number of questions being processed (preserve existing logging)
+    console.log(`Organizing questions. Processing ${allQuestions.length} questions...`);
+
+    // Use retryWithBackoff instead of manual retry logic
+    const response = await retryWithBackoff(
+      (timeout) => responsesAgent.createInitialResponse(
+        dedupePrompt,
+        [briefContextId, analysisContextId],
+        VALID_SPECIALISTS.SP_COLLABORATION_ORCHESTRATOR,
+        'Organize Questions',
+        currentProposalId,
+        lastQuestionResponseId,
+        false,
+        { timeout }
+      ),
+      {
+        retries: 3,
+        initialDelay: 2000,
+        maxDelay: 15000,
+        operationDescription: `OpenAI API - Organize Questions (proposalId: ${currentProposalId}, sessionId: ${sessionId})`,
+        timeout: responsesAgent.apiTimeout
       }
-    }
+    );
     let organizedQuestions;
     try {
       organizedQuestions = JSON.parse(response.response);

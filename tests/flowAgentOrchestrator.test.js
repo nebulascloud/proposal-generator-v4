@@ -39,6 +39,11 @@ jest.mock('../agents/responsesAgent', () => ({
   getTokenUsageReport: jest.fn(),
 }));
 
+// Mock the retryWithBackoff utility
+jest.mock('../utils/apiRetryHelper', () => ({
+  retryWithBackoff: jest.fn((fn) => fn()),
+}));
+
 describe('flowAgentOrchestrator', () => {
   beforeEach(() => {
     jest.clearAllMocks();

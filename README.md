@@ -15,6 +15,7 @@ A minimal MVP service to generate proposal drafts via HTTP requests.
 - `TEMPLATE_DIR`: Directory for Handlebars templates (default: `templates`)
 - `OPENAI_API_KEY`: API key for OpenAI calls (required for `/agents/proposals`)
 - `OPENAI_TEMPERATURE`: Optional temperature setting for OpenAI LLM (default: 0.7)
+- `OPENAI_TIMEOUT_MS`: Timeout in milliseconds for OpenAI API calls (default: 60000). Increase this value when using models like 'o1' that may require more processing time.
 
 ## Endpoints
 

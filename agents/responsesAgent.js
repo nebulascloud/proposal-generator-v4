@@ -1,4 +1,9 @@
 /**
+ * IMPORTANT: All OpenAI API calls must go through this file and use the shared retryWithBackoff utility.
+ * Do NOT call OpenAI APIs directly elsewhere in the codebase. This ensures robust retry/backoff and logging.
+ */
+
+/**
  * Responses API Utilities
  * 
  * This module provides core utilities for interacting with OpenAI's Responses API,
@@ -11,6 +16,7 @@ const path = require('path');
 const { OpenAI } = require('openai');
 const { assistantDefinitions } = require('./assistantDefinitions');
 const { v4: uuidv4 } = require('uuid');
+const { retryWithBackoff } = require('../utils/apiRetryHelper');
 
 // Database models for message logging
 const Session = require('../db/models/session');
@@ -21,17 +27,19 @@ const Agent = require('../db/models/agent');
 const jsonContext = require('../utils/jsonContext');
 const { buildMessageContext } = require('../utils/messageContextBuilder');
 
-// Initialize OpenAI client
+// Initialize OpenAI client with configurable timeout
+const apiTimeout = parseInt(process.env.OPENAI_TIMEOUT_MS) || 60000; // Default to 60 seconds if not set
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY,
-  maxRetries: 3,
-  timeout: 60000 // 60 seconds timeout for longer generations
+  maxRetries: 0, // Let our own retryWithBackoff handle all retries and logging
+  timeout: apiTimeout
 });
 
 // Log startup configuration for debugging
 console.log(`[responsesAgent] Initialized with model: ${process.env.OPENAI_MODEL || 'default'}`);
 console.log(`[responsesAgent] API key configured: ${process.env.OPENAI_API_KEY ? 'Yes (hidden)' : 'No'}`);
 console.log(`[responsesAgent] Temperature setting: ${process.env.OPENAI_TEMPERATURE || 'default'}`);
+console.log(`[responsesAgent] API timeout: ${apiTimeout}ms`);
 
 /**
  * Proposal progress tracking state
@@ -327,9 +335,11 @@ async function createAndUploadFile(content, filename, useJsonContext = true) {
  *                                     When provided, contexts are minimized as the API inherits previous context
  * @param {Boolean} skipDbLogging - Optional flag to skip logging this exchange to the database (default: false)
  *                                 Useful for intermediate steps in multi-step workflows
+ * @param {Object} options - Optional parameters
+ * @param {Number} options.timeout - Optional timeout for the API call, overrides global setting
  * @returns {Object} The OpenAI response
  */
-async function createInitialResponse(content, contexts = [], role, phase = null, proposalId = null, previousResponseId = null, skipDbLogging = false) {
+async function createInitialResponse(content, contexts = [], role, phase = null, proposalId = null, previousResponseId = null, skipDbLogging = false, options = {}) {
   try {
     // Get instructions for the role from assistantDefinitions
     const instructions = assistantDefinitions[role] || '';
@@ -461,8 +471,13 @@ async function createInitialResponse(content, contexts = [], role, phase = null,
       console.log(`[responsesAgent] Using previous_response_id: ${previousResponseId} - context inheriting from previous response`);
     }
 
+    // Use dynamic timeout if provided
+    const apiCallOptions = {};
+    if (options.timeout) {
+      apiCallOptions.timeout = options.timeout;
+    }
     // Create response using Responses API
-    const response = await openai.responses.create(responseOptions);
+    const response = await openai.responses.create(responseOptions, apiCallOptions);
 
     // Extract the main text from the OpenAI response
     // Prefer choices/message.content, then output[].content[].text, then text/content fields
@@ -693,6 +708,7 @@ module.exports = {
   forkResponse,
   trackTokenUsage,
   buildContextFromMessages,
+  apiTimeout, // Export the timeout value for use in retry helper
   updateProgressStatus: function(proposalId, component, status, details = {}) {
     // Find the phase and component in proposalProgress
     const phases = Object.keys(proposalProgress);
